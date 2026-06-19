@@ -42,14 +42,14 @@
   <!-- Outline toggle for Preset 3 -->
   <button id="btn-outline" class="control-btn">Outline [O]</button>
 
-  <!-- Right-side video controller panel for Preset 6 -->
+  <!-- Right-side video/image controller panel for Preset 6 -->
   <div id="preset6-panel">
     <div id="preset6-preview-container">
-      <div style="color: #666; font-size: 12px; height: 100%; display: flex; align-items: center; justify-content: center;">No video loaded</div>
+      <div style="color: #666; font-size: 12px; height: 100%; display: flex; align-items: center; justify-content: center;">No file selected</div>
     </div>
     <div class="preset6-input-row">
-      <input type="text" id="preset6-link-input" placeholder="Paste YouTube or MP4 link...">
-      <button id="preset6-load-btn" class="control-btn">Load</button>
+      <input type="file" id="preset6-file-input" accept="video/*,image/*" style="display: none;">
+      <button id="preset6-choose-btn" class="control-btn" style="width: 100%;">Choose File</button>
     </div>
   </div>
 

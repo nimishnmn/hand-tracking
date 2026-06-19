@@ -94,9 +94,10 @@ last_left_hand = None
 last_right_hand = None
 last_pose = None
 
-# Preset 6 video variables
+# Preset 6 video/image variables
 overlay_url = "sample.mp4"
 overlay_cap = None
+overlay_img = None
 
 # -------------------------
 # Main Loop
@@ -406,63 +407,65 @@ with mp_holistic.Holistic(
 
 
         # -------------------------
-        # Preset 6: YouTube/Video Corner-pinned Overlay
+        # Preset 6: Video/Image Corner-pinned Overlay
         # -------------------------
         if active_preset == 6 and results.left_hand_landmarks and results.right_hand_landmarks:
-            if overlay_cap is not None and overlay_cap.isOpened():
+            frame_o = None
+            if overlay_img is not None:
+                frame_o = overlay_img
+            elif overlay_cap is not None and overlay_cap.isOpened():
                 ret_o, frame_o = overlay_cap.read()
                 if not ret_o:
-                    # Loop video back to beginning if it ends
                     overlay_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     ret_o, frame_o = overlay_cap.read()
                 
-                if ret_o and frame_o is not None:
-                    h_o, w_o, _ = frame_o.shape
-                    
-                    # Target corners between Left & Right Hand's index and thumb tips:
-                    # pt1 (Left Hand thumb tip)
-                    # pt4 (Right Hand thumb tip)
-                    # pt3 (Right Hand index tip)
-                    # pt2 (Left Hand index tip)
-                    lh_thumb = results.left_hand_landmarks.landmark[4]
-                    lh_index = results.left_hand_landmarks.landmark[8]
-                    rh_thumb = results.right_hand_landmarks.landmark[4]
-                    rh_index = results.right_hand_landmarks.landmark[8]
-                    
-                    pt1 = (int(lh_thumb.x * w), int(lh_thumb.y * h))
-                    pt2 = (int(lh_index.x * w), int(lh_index.y * h))
-                    pt3 = (int(rh_index.x * w), int(rh_index.y * h))
-                    pt4 = (int(rh_thumb.x * w), int(rh_thumb.y * h))
-                    
-                    # Source corners of the overlay video
-                    src_pts = np.array([
-                        [0, 0],
-                        [w_o - 1, 0],
-                        [w_o - 1, h_o - 1],
-                        [0, h_o - 1]
-                    ], dtype=np.float32)
-                    
-                    # Destination corners
-                    dst_pts = np.array([
-                        pt1,
-                        pt4,
-                        pt3,
-                        pt2
-                    ], dtype=np.float32)
-                    
-                    # Compute perspective warp homography matrix
-                    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-                    
-                    # Warp overlay frame to fit screen dimensions (w, h)
-                    warped_overlay = cv2.warpPerspective(frame_o, M, (w, h))
-                    
-                    # Create binary mask of the destination quad area
-                    mask = np.zeros((h, w), dtype=np.uint8)
-                    cv2.fillConvexPoly(mask, np.array([pt1, pt4, pt3, pt2], dtype=np.int32), 255)
-                    
-                    # Blend the warped video into the main frame
-                    mask_3ch = cv2.merge([mask, mask, mask])
-                    frame = np.where(mask_3ch == 255, warped_overlay, frame)
+            if frame_o is not None:
+                h_o, w_o, _ = frame_o.shape
+                
+                # Target corners between Left & Right Hand's index and thumb tips:
+                # pt1 (Left Hand thumb tip)
+                # pt4 (Right Hand thumb tip)
+                # pt3 (Right Hand index tip)
+                # pt2 (Left Hand index tip)
+                lh_thumb = results.left_hand_landmarks.landmark[4]
+                lh_index = results.left_hand_landmarks.landmark[8]
+                rh_thumb = results.right_hand_landmarks.landmark[4]
+                rh_index = results.right_hand_landmarks.landmark[8]
+                
+                pt1 = (int(lh_thumb.x * w), int(lh_thumb.y * h))
+                pt2 = (int(lh_index.x * w), int(lh_index.y * h))
+                pt3 = (int(rh_index.x * w), int(rh_index.y * h))
+                pt4 = (int(rh_thumb.x * w), int(rh_thumb.y * h))
+                
+                # Source corners of the overlay video/image
+                src_pts = np.array([
+                    [0, 0],
+                    [w_o - 1, 0],
+                    [w_o - 1, h_o - 1],
+                    [0, h_o - 1]
+                ], dtype=np.float32)
+                
+                # Destination corners
+                dst_pts = np.array([
+                    pt1,
+                    pt4,
+                    pt3,
+                    pt2
+                ], dtype=np.float32)
+                
+                # Compute perspective warp homography matrix
+                M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+                
+                # Warp overlay frame to fit screen dimensions (w, h)
+                warped_overlay = cv2.warpPerspective(frame_o, M, (w, h))
+                
+                # Create binary mask of the destination quad area
+                mask = np.zeros((h, w), dtype=np.uint8)
+                cv2.fillConvexPoly(mask, np.array([pt1, pt4, pt3, pt2], dtype=np.int32), 255)
+                
+                # Blend the warped media into the main frame
+                mask_3ch = cv2.merge([mask, mask, mask])
+                frame = np.where(mask_3ch == 255, warped_overlay, frame)
 
         # -------------------------
         # Status Text
@@ -551,7 +554,7 @@ with mp_holistic.Holistic(
         elif key == ord('6'):
             active_preset = 6
             print("Preset 6 activated")
-            if overlay_cap is None:
+            if overlay_cap is None and overlay_img is None:
                 import os
                 if overlay_url == "sample.mp4" and not os.path.exists("sample.mp4"):
                     print("Default video 'sample.mp4' not found. Downloading...")
@@ -561,72 +564,57 @@ with mp_holistic.Holistic(
                         print("Download complete.")
                     except Exception as e:
                         print(f"Failed to download default video: {e}")
-                overlay_cap = cv2.VideoCapture(overlay_url)
+                
+                if overlay_url.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp')):
+                    overlay_img = cv2.imread(overlay_url)
+                else:
+                    overlay_cap = cv2.VideoCapture(overlay_url)
 
         elif key == ord('u') and active_preset == 6:
-            print("\n--- Video Source Update ---")
-            print("Camera feed paused. Please go to your terminal to update.")
-            new_url = input("Enter local video path (e.g. sample.mp4) or direct web MP4/YouTube URL: ").strip()
-            if new_url:
-                if new_url.startswith("http://") or new_url.startswith("https://"):
-                    import subprocess
-                    import os
-                    # If it's a YouTube link, download it using yt_dlp
-                    if "youtube.com" in new_url or "youtu.be" in new_url:
-                        print("Downloading YouTube video via yt-dlp...")
-                        try:
-                            result = subprocess.run([
-                                "python3", "-m", "yt_dlp",
-                                "-o", "temp_preset6.mp4",
-                                "-f", "best[ext=mp4]/best",
-                                "--no-playlist",
-                                new_url
-                            ], capture_output=True, text=True)
-                            if result.returncode == 0 and os.path.exists("temp_preset6.mp4"):
-                                overlay_url = "temp_preset6.mp4"
-                                print("YouTube download complete. Playing video...")
-                            else:
-                                print(f"YouTube download failed: {result.stderr}")
-                                print("Retrying with worst quality format...")
-                                result_retry = subprocess.run([
-                                    "python3", "-m", "yt_dlp",
-                                    "-o", "temp_preset6.mp4",
-                                    "-f", "worst[ext=mp4]/worst",
-                                    "--no-playlist",
-                                    new_url
-                                ], capture_output=True, text=True)
-                                if result_retry.returncode == 0 and os.path.exists("temp_preset6.mp4"):
-                                    overlay_url = "temp_preset6.mp4"
-                                    print("YouTube download complete (fallback quality). Playing video...")
-                                else:
-                                    print("YouTube download fallback failed.")
-                        except Exception as e:
-                            print(f"Error running yt-dlp: {e}")
+            print("\n--- Video/Image Source Update ---")
+            print("Camera feed paused. A file chooser dialog has opened.")
+            file_path = None
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+                root = tk.Tk()
+                root.withdraw()
+                file_path = filedialog.askopenfilename(
+                    title="Select Video or Image for Overlay",
+                    filetypes=[
+                        ("All Supported Media", "*.mp4 *.avi *.mov *.mkv *.jpg *.jpeg *.png *.webp *.bmp"),
+                        ("Video files", "*.mp4 *.avi *.mov *.mkv"),
+                        ("Image files", "*.jpg *.jpeg *.png *.webp *.bmp")
+                    ]
+                )
+                root.destroy()
+            except Exception as e:
+                print(f"Failed to open GUI file dialog ({e}). Fallback to terminal input.")
+                file_path = input("Enter path to local video or image: ").strip()
+            
+            if file_path:
+                import os
+                if os.path.exists(file_path):
+                    overlay_url = file_path
+                    if overlay_cap is not None:
+                        overlay_cap.release()
+                        overlay_cap = None
+                    overlay_img = None
+                    
+                    if file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp')):
+                        overlay_img = cv2.imread(file_path)
+                        if overlay_img is not None:
+                            print(f"Loaded local image: {file_path}")
+                        else:
+                            print(f"Failed to read image: {file_path}")
                     else:
-                        print("Downloading direct video stream via curl...")
-                        try:
-                            if os.path.exists("temp_preset6.mp4"):
-                                os.remove("temp_preset6.mp4")
-                            result = subprocess.run(["curl", "-L", "-o", "temp_preset6.mp4", new_url], capture_output=True)
-                            if result.returncode == 0 and os.path.exists("temp_preset6.mp4") and os.path.getsize("temp_preset6.mp4") > 1000:
-                                overlay_url = "temp_preset6.mp4"
-                                print("Download complete. Playing video...")
-                            else:
-                                print("Download failed or empty file. Check URL or network.")
-                        except Exception as e:
-                            print(f"Error downloading stream: {e}")
+                        overlay_cap = cv2.VideoCapture(file_path)
+                        if overlay_cap.isOpened():
+                            print(f"Loaded local video: {file_path} (playing on repeat)")
+                        else:
+                            print(f"Failed to open video: {file_path}")
                 else:
-                    import os
-                    if os.path.exists(new_url):
-                        overlay_url = new_url
-                        print(f"Playing local video: {new_url}")
-                    else:
-                        print(f"File not found: {new_url}")
-                
-                # Reopen Cap
-                if overlay_cap is not None:
-                    overlay_cap.release()
-                overlay_cap = cv2.VideoCapture(overlay_url)
+                    print(f"File not found: {file_path}")
             print("Resuming camera feed.\n")
 
         # Lock to 25 FPS (40ms interval)

@@ -97,14 +97,9 @@ let btnOutline;
 
 let preset6Panel;
 let preset6PreviewContainer;
-let preset6LinkInput;
-let preset6LoadBtn;
+let preset6FileInput;
+let preset6ChooseBtn;
 let preset6OverlayContainer;
-
-// YouTube Players
-let ytPreviewPlayer = null;
-let ytOverlayPlayer = null;
-let ytInterval = null;
 
 // Offscreen canvas for pixel manipulation (Preset 3)
 let offscreenCanvas;
@@ -195,143 +190,52 @@ function getHomographyMatrix(src, dst) {
   ];
 }
 
-function getYouTubeId(url) {
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
-}
+function loadPreset6Media(source, isFile = false) {
+  const mediaUrl = isFile ? URL.createObjectURL(source) : source;
+  const isImage = isFile ? source.type.startsWith('image/') : false;
 
-// Load YouTube Iframe API globally
-(function loadYTScript() {
-  if (!window.YT) {
-    const tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    const firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-  }
-})();
-
-function loadVideo(url) {
-  const ytId = getYouTubeId(url);
-  
-  if (ytInterval) {
-    clearInterval(ytInterval);
-    ytInterval = null;
-  }
-  
-  if (ytId) {
-    if (window.YT && window.YT.Player) {
-      initYouTubePlayers(ytId);
-    } else {
-      setTimeout(() => loadVideo(url), 500);
-    }
+  if (isImage) {
+    preset6PreviewContainer.innerHTML = `
+      <img id="preset6-preview-image" src="${mediaUrl}" style="width: 100%; height: 100%; object-fit: contain;">
+    `;
+    preset6OverlayContainer.innerHTML = `
+      <img id="preset6-overlay-image" src="${mediaUrl}" style="position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; pointer-events: none;">
+    `;
   } else {
-    ytPreviewPlayer = null;
-    ytOverlayPlayer = null;
-    initDirectVideo(url);
-  }
-}
+    preset6PreviewContainer.innerHTML = `
+      <video id="preset6-preview-video" controls autoplay loop style="width: 100%; height: 100%; object-fit: contain;">
+        <source src="${mediaUrl}">
+      </video>
+    `;
+    preset6OverlayContainer.innerHTML = `
+      <video id="preset6-overlay-video" muted autoplay loop playsinline style="position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; pointer-events: none;">
+        <source src="${mediaUrl}">
+      </video>
+    `;
 
-function initYouTubePlayers(videoId) {
-  preset6PreviewContainer.innerHTML = '<div id="preset6-preview-player"></div>';
-  preset6OverlayContainer.innerHTML = '<div id="preset6-overlay-player" style="position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; pointer-events: none;"></div>';
-  
-  ytPreviewPlayer = new YT.Player('preset6-preview-player', {
-    width: '100%',
-    height: '100%',
-    videoId: videoId,
-    playerVars: {
-      controls: 1,
-      autoplay: 1,
-      mute: 0
-    },
-    events: {
-      'onStateChange': onPreviewStateChange
-    }
-  });
-  
-  ytOverlayPlayer = new YT.Player('preset6-overlay-player', {
-    width: '640',
-    height: '360',
-    videoId: videoId,
-    playerVars: {
-      controls: 0,
-      autoplay: 1,
-      mute: 1,
-      disablekb: 1,
-      fs: 0,
-      rel: 0,
-      showinfo: 0,
-      iv_load_policy: 3
-    }
-  });
+    const previewVideo = document.getElementById('preset6-preview-video');
+    const overlayVideo = document.getElementById('preset6-overlay-video');
 
-  ytInterval = setInterval(() => {
-    if (ytPreviewPlayer && ytOverlayPlayer && ytPreviewPlayer.getPlayerState && ytOverlayPlayer.getPlayerState) {
-      if (ytPreviewPlayer.getPlayerState() === YT.PlayerState.PLAYING) {
-        const diff = Math.abs(ytPreviewPlayer.getCurrentTime() - ytOverlayPlayer.getCurrentTime());
-        if (diff > 0.3) {
-          ytOverlayPlayer.seekTo(ytPreviewPlayer.getCurrentTime(), true);
-        }
-      }
-    }
-  }, 500);
-}
-
-function onPreviewStateChange(event) {
-  if (!ytOverlayPlayer || !ytOverlayPlayer.getPlayerState) return;
-  const state = event.data;
-  if (state === YT.PlayerState.PLAYING) {
-    ytOverlayPlayer.seekTo(ytPreviewPlayer.getCurrentTime(), true);
-    ytOverlayPlayer.playVideo();
-  } else if (state === YT.PlayerState.PAUSED) {
-    ytOverlayPlayer.pauseVideo();
-    ytOverlayPlayer.seekTo(ytPreviewPlayer.getCurrentTime(), true);
-  } else if (state === YT.PlayerState.ENDED) {
-    ytOverlayPlayer.stopVideo();
-  }
-}
-
-function initDirectVideo(url) {
-  preset6PreviewContainer.innerHTML = `
-    <video id="preset6-preview-video" controls autoplay style="width: 100%; height: 100%;">
-      <source src="${url}">
-    </video>
-  `;
-  preset6OverlayContainer.innerHTML = `
-    <video id="preset6-overlay-video" muted autoplay loop playsinline style="position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; pointer-events: none;">
-      <source src="${url}">
-    </video>
-  `;
-  
-  const previewVideo = document.getElementById('preset6-preview-video');
-  const overlayVideo = document.getElementById('preset6-overlay-video');
-  
-  if (previewVideo && overlayVideo) {
-    previewVideo.addEventListener('play', () => overlayVideo.play());
-    previewVideo.addEventListener('pause', () => overlayVideo.pause());
-    previewVideo.addEventListener('seeking', () => {
-      overlayVideo.currentTime = previewVideo.currentTime;
-    });
-    previewVideo.addEventListener('seeked', () => {
-      overlayVideo.currentTime = previewVideo.currentTime;
-    });
-    previewVideo.addEventListener('timeupdate', () => {
-      const diff = Math.abs(previewVideo.currentTime - overlayVideo.currentTime);
-      if (diff > 0.3) {
+    if (previewVideo && overlayVideo) {
+      previewVideo.addEventListener('play', () => overlayVideo.play());
+      previewVideo.addEventListener('pause', () => overlayVideo.pause());
+      previewVideo.addEventListener('seeking', () => {
         overlayVideo.currentTime = previewVideo.currentTime;
-      }
-    });
+      });
+      previewVideo.addEventListener('seeked', () => {
+        overlayVideo.currentTime = previewVideo.currentTime;
+      });
+      previewVideo.addEventListener('timeupdate', () => {
+        const diff = Math.abs(previewVideo.currentTime - overlayVideo.currentTime);
+        if (diff > 0.3) {
+          overlayVideo.currentTime = previewVideo.currentTime;
+        }
+      });
+    }
   }
 }
 
 function pausePlayers() {
-  if (ytPreviewPlayer && ytPreviewPlayer.pauseVideo) {
-    ytPreviewPlayer.pauseVideo();
-  }
-  if (ytOverlayPlayer && ytOverlayPlayer.pauseVideo) {
-    ytOverlayPlayer.pauseVideo();
-  }
   const previewVideo = document.getElementById('preset6-preview-video');
   const overlayVideo = document.getElementById('preset6-overlay-video');
   if (previewVideo && previewVideo.pause) {
@@ -383,8 +287,8 @@ function updatePresetHighlights() {
     preset6Panel.style.display = 'flex';
     preset6OverlayContainer.style.display = 'block';
     
-    if (!document.getElementById('preset6-preview-video') && !ytPreviewPlayer) {
-      loadVideo("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4");
+    if (!document.getElementById('preset6-preview-video') && !document.getElementById('preset6-preview-image')) {
+      loadPreset6Media("sample.mp4", false);
     }
   } else {
     preset6Panel.style.display = 'none';
@@ -424,8 +328,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   preset6Panel = document.getElementById('preset6-panel');
   preset6PreviewContainer = document.getElementById('preset6-preview-container');
-  preset6LinkInput = document.getElementById('preset6-link-input');
-  preset6LoadBtn = document.getElementById('preset6-load-btn');
+  preset6FileInput = document.getElementById('preset6-file-input');
+  preset6ChooseBtn = document.getElementById('preset6-choose-btn');
   preset6OverlayContainer = document.getElementById('preset6-overlay-container');
 
   // Offscreen canvas for pixel manipulation (Preset 3)
@@ -479,10 +383,14 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Preset 6 activated');
   });
 
-  preset6LoadBtn.addEventListener('click', () => {
-    const url = preset6LinkInput.value.trim();
-    if (url) {
-      loadVideo(url);
+  preset6ChooseBtn.addEventListener('click', () => {
+    preset6FileInput.click();
+  });
+
+  preset6FileInput.addEventListener('change', (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      loadPreset6Media(file, true);
     }
   });
 
@@ -1013,7 +921,7 @@ async function renderLoop(nowMs) {
     preset6OverlayContainer.style.width = rect.width + 'px';
     preset6OverlayContainer.style.height = rect.height + 'px';
     
-    const playerEl = document.getElementById('preset6-overlay-player') || document.getElementById('preset6-overlay-video');
+    const playerEl = document.getElementById('preset6-overlay-video') || document.getElementById('preset6-overlay-image');
     if (playerEl) {
       const pt1 = { x: lh[4].x * rect.width, y: lh[4].y * rect.height };
       const pt2 = { x: lh[8].x * rect.width, y: lh[8].y * rect.height };
@@ -1239,10 +1147,6 @@ function stopTracking() {
   preset6Panel.style.display = 'none';
   preset6OverlayContainer.style.display = 'none';
   pausePlayers();
-  if (ytInterval) {
-    clearInterval(ytInterval);
-    ytInterval = null;
-  }
   startCameraBtn.style.display = 'block';
 
   if (handLandmarker) {
