@@ -9,7 +9,6 @@ const progressBarFill = document.getElementById('progress-bar-fill');
 
 // Mobile Control Bar Elements
 const controlBar = document.getElementById('control-bar');
-const btnFace = document.getElementById('btn-face');
 const btnPose = document.getElementById('btn-pose');
 const btnHands = document.getElementById('btn-hands');
 const btnQuit = document.getElementById('btn-quit');
@@ -23,7 +22,6 @@ let isLoaded = false;
 
 // Default toggle states (All OFF by default)
 const options = {
-  showFace: false,
   showPose: false,
   showHands: false,
   showCornerpin: true, // Always active
@@ -32,17 +30,11 @@ const options = {
 
 // Update CSS classes for active buttons
 function updateButtonHighlights() {
-  btnFace.classList.toggle('active', options.showFace);
   btnPose.classList.toggle('active', options.showPose);
   btnHands.classList.toggle('active', options.showHands);
 }
 
 // Attach tap/click events to on-screen control buttons
-btnFace.addEventListener('click', () => {
-  options.showFace = !options.showFace;
-  updateButtonHighlights();
-  console.log(`Face: ${options.showFace ? 'ON' : 'OFF'}`);
-});
 
 btnPose.addEventListener('click', () => {
   options.showPose = !options.showPose;
@@ -107,7 +99,7 @@ holistic.setOptions({
   modelComplexity: 1,
   smoothLandmarks: true,
   enableSegmentation: false,
-  refineFaceLandmarks: true,
+  refineFaceLandmarks: false,
   minDetectionConfidence: 0.5,
   minTrackingConfidence: 0.5
 });
@@ -132,13 +124,7 @@ holistic.onResults((results) => {
   // Draw base video frame
   canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-  // Draw Face Mesh if enabled
-  if (options.showFace && results.faceLandmarks) {
-    drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_CONTOURS, {
-      color: 'rgba(255, 255, 255, 0.4)',
-      lineWidth: 0.8
-    });
-  }
+
 
   // Draw Pose Skeleton if enabled
   if (options.showPose && results.poseLandmarks) {
@@ -216,19 +202,16 @@ holistic.onResults((results) => {
   // 2. Draw HUD Skeletons Status (Exactly replicating CV2 putText colors & positions)
   canvasCtx.font = 'bold 20px monospace';
   
-  // Draw Face Status
-  canvasCtx.fillStyle = 'rgb(0, 255, 0)';
-  canvasCtx.fillText(`Face [F]: ${options.showFace ? 'ON' : 'OFF'}`, 20, 40);
-
   // Draw Pose Status
-  canvasCtx.fillText(`Pose [P]: ${options.showPose ? 'ON' : 'OFF'}`, 20, 75);
+  canvasCtx.fillStyle = 'rgb(0, 255, 0)';
+  canvasCtx.fillText(`Pose [P]: ${options.showPose ? 'ON' : 'OFF'}`, 20, 40);
 
   // Draw Hands Status
-  canvasCtx.fillText(`Hands [H]: ${options.showHands ? 'ON' : 'OFF'}`, 20, 110);
+  canvasCtx.fillText(`Hands [H]: ${options.showHands ? 'ON' : 'OFF'}`, 20, 75);
 
   // Draw ESC = Quit status
   canvasCtx.fillStyle = 'rgb(0, 255, 255)';
-  canvasCtx.fillText('ESC = Quit', 20, 145);
+  canvasCtx.fillText('ESC = Quit', 20, 110);
 });
 
 // Setup Keyboard Listeners (Replicating desktop tracking control shortcuts)
@@ -248,10 +231,6 @@ document.addEventListener('keydown', (event) => {
     options.showPose = !options.showPose;
     updateButtonHighlights();
     console.log(`Pose: ${options.showPose ? 'ON' : 'OFF'}`);
-  } else if (key === 'f') {
-    options.showFace = !options.showFace;
-    updateButtonHighlights();
-    console.log(`Face: ${options.showFace ? 'ON' : 'OFF'}`);
   }
 });
 

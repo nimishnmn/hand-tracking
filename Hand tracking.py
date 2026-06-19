@@ -19,7 +19,6 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 # -------------------------
 # Toggle States
 # -------------------------
-show_face = False
 show_pose = False
 show_hands = False
 
@@ -48,15 +47,6 @@ with mp_holistic.Holistic(
         # Process frame
         results = holistic.process(rgb)
 
-        # -------------------------
-        # Draw Face
-        # -------------------------
-        if show_face and results.face_landmarks:
-            mp_drawing.draw_landmarks(
-                frame,
-                results.face_landmarks,
-                mp_holistic.FACEMESH_CONTOURS
-            )
 
         # -------------------------
         # Draw Pose
@@ -122,7 +112,7 @@ with mp_holistic.Holistic(
         # -------------------------
         cv2.putText(
             frame,
-            f"Face [F]: {'ON' if show_face else 'OFF'}",
+            f"Pose [P]: {'ON' if show_pose else 'OFF'}",
             (20, 40),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
@@ -132,7 +122,7 @@ with mp_holistic.Holistic(
 
         cv2.putText(
             frame,
-            f"Pose [P]: {'ON' if show_pose else 'OFF'}",
+            f"Hands [H]: {'ON' if show_hands else 'OFF'}",
             (20, 75),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
@@ -142,18 +132,8 @@ with mp_holistic.Holistic(
 
         cv2.putText(
             frame,
-            f"Hands [H]: {'ON' if show_hands else 'OFF'}",
-            (20, 110),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2
-        )
-
-        cv2.putText(
-            frame,
             "ESC = Quit",
-            (20, 145),
+            (20, 110),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (0, 255, 255),
@@ -179,9 +159,7 @@ with mp_holistic.Holistic(
             show_pose = not show_pose
             print(f"Pose: {'ON' if show_pose else 'OFF'}")
 
-        elif key == ord('f'):
-            show_face = not show_face
-            print(f"Face: {'ON' if show_face else 'OFF'}")
+
 
 # -------------------------
 # Cleanup
