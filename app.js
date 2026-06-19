@@ -99,7 +99,11 @@ let preset6Panel;
 let preset6PreviewContainer;
 let preset6FileInput;
 let preset6ChooseBtn;
+let preset6FlipHBtn;
+let preset6FlipVBtn;
 let preset6OverlayContainer;
+let overlayFlipH = false;
+let overlayFlipV = false;
 
 // Offscreen canvas for pixel manipulation (Preset 3)
 let offscreenCanvas;
@@ -190,6 +194,45 @@ function getHomographyMatrix(src, dst) {
   ];
 }
 
+function getScreenCoords(lm, rect) {
+  let x = lm.x;
+  let y = lm.y;
+  if (options.flipH) {
+    x = 1.0 - x;
+  }
+  if (options.flipV) {
+    y = 1.0 - y;
+  }
+  return {
+    x: x * rect.width,
+    y: y * rect.height
+  };
+}
+
+function isConvex(pts) {
+  const n = pts.length;
+  let sign = 0;
+  for (let i = 0; i < n; i++) {
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % n];
+    const p3 = pts[(i + 2) % n];
+    const dx1 = p2.x - p1.x;
+    const dy1 = p2.y - p1.y;
+    const dx2 = p3.x - p2.x;
+    const dy2 = p3.y - p2.y;
+    const cross = dx1 * dy2 - dy1 * dx2;
+    if (cross !== 0) {
+      const currentSign = cross > 0 ? 1 : -1;
+      if (sign === 0) {
+        sign = currentSign;
+      } else if (sign !== currentSign) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 function loadPreset6Media(source, isFile = false) {
   const mediaUrl = isFile ? URL.createObjectURL(source) : source;
   const isImage = isFile ? source.type.startsWith('image/') : false;
@@ -274,6 +317,8 @@ function updatePresetHighlights() {
   btnPreset5.classList.toggle('active', options.activePreset === 5);
   btnPreset6.classList.toggle('active', options.activePreset === 6);
   btnOutline.classList.toggle('active', options.showOutline);
+  if (preset6FlipHBtn) preset6FlipHBtn.classList.toggle('active', overlayFlipH);
+  if (preset6FlipVBtn) preset6FlipVBtn.classList.toggle('active', overlayFlipV);
 
   // Show outline toggle only when Preset 3 is active and tracking is active
   if (activeStream && options.activePreset === 3) {
@@ -330,6 +375,8 @@ document.addEventListener('DOMContentLoaded', () => {
   preset6PreviewContainer = document.getElementById('preset6-preview-container');
   preset6FileInput = document.getElementById('preset6-file-input');
   preset6ChooseBtn = document.getElementById('preset6-choose-btn');
+  preset6FlipHBtn = document.getElementById('preset6-fliph-btn');
+  preset6FlipVBtn = document.getElementById('preset6-flipv-btn');
   preset6OverlayContainer = document.getElementById('preset6-overlay-container');
 
   // Offscreen canvas for pixel manipulation (Preset 3)
@@ -392,6 +439,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (file) {
       loadPreset6Media(file, true);
     }
+  });
+
+  preset6FlipHBtn.addEventListener('click', () => {
+    overlayFlipH = !overlayFlipH;
+    preset6FlipHBtn.classList.toggle('active', overlayFlipH);
+  });
+
+  preset6FlipVBtn.addEventListener('click', () => {
+    overlayFlipV = !overlayFlipV;
+    preset6FlipVBtn.classList.toggle('active', overlayFlipV);
   });
 
   btnOutline.addEventListener('click', () => {
@@ -923,19 +980,38 @@ async function renderLoop(nowMs) {
     
     const playerEl = document.getElementById('preset6-overlay-video') || document.getElementById('preset6-overlay-image');
     if (playerEl) {
-      const pt1 = { x: lh[4].x * rect.width, y: lh[4].y * rect.height };
-      const pt2 = { x: lh[8].x * rect.width, y: lh[8].y * rect.height };
-      const pt3 = { x: rh[8].x * rect.width, y: rh[8].y * rect.height };
-      const pt4 = { x: rh[4].x * rect.width, y: rh[4].y * rect.height };
+      const pt1_screen = getScreenCoords(lh[0], rect);
+      const pt2_screen = getScreenCoords(rh[0], rect);
       
-      const src = [[0, 0], [640, 0], [640, 360], [0, 360]];
-      const dst = [[pt1.x, pt1.y], [pt4.x, pt4.y], [pt3.x, pt3.y], [pt2.x, pt2.y]];
+      let vL, vR;
+      if (pt1_screen.x < pt2_screen.x) {
+        vL = lh;
+        vR = rh;
+      } else {
+        vL = rh;
+        vR = lh;
+      }
       
-      try {
-        const matrix = getHomographyMatrix(src, dst);
-        playerEl.style.transform = `matrix3d(${matrix.join(',')})`;
-      } catch (err) {
-        console.error('Error computing homography matrix:', err);
+      const pt1 = getScreenCoords(vL[4], rect); // Left Thumb
+      const pt2 = getScreenCoords(vL[8], rect); // Left Index
+      const pt3 = getScreenCoords(vR[8], rect); // Right Index
+      const pt4 = getScreenCoords(vR[4], rect); // Right Thumb
+      
+      const x0 = overlayFlipH ? 640 : 0;
+      const x1 = overlayFlipH ? 0 : 640;
+      const y0 = overlayFlipV ? 360 : 0;
+      const y1 = overlayFlipV ? 0 : 360;
+      
+      const src = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+      const dst = [[pt2.x, pt2.y], [pt3.x, pt3.y], [pt4.x, pt4.y], [pt1.x, pt1.y]];
+      
+      if (isConvex(dst.map(p => ({ x: p[0], y: p[1] })))) {
+        try {
+          const matrix = getHomographyMatrix(src, dst);
+          playerEl.style.transform = `matrix3d(${matrix.join(',')})`;
+        } catch (err) {
+          console.error('Error computing homography matrix:', err);
+        }
       }
     }
   }

@@ -7,6 +7,26 @@ import time
 trail_buffer = None
 import math
 
+def is_convex(pts):
+    n = len(pts)
+    sign = 0
+    for i in range(n):
+        p1 = pts[i]
+        p2 = pts[(i + 1) % n]
+        p3 = pts[(i + 2) % n]
+        dx1 = p2[0] - p1[0]
+        dy1 = p2[1] - p1[1]
+        dx2 = p3[0] - p2[0]
+        dy2 = p3[1] - p2[1]
+        cross = dx1 * dy2 - dy1 * dx2
+        if cross != 0:
+            current_sign = 1 if cross > 0 else -1
+            if sign == 0:
+                sign = current_sign
+            elif sign != current_sign:
+                return False
+    return True
+
 # -------------------------
 # MediaPipe Setup
 # -------------------------
@@ -98,6 +118,8 @@ last_pose = None
 overlay_url = "sample.mp4"
 overlay_cap = None
 overlay_img = None
+overlay_flip_h = False
+overlay_flip_v = False
 
 # -------------------------
 # Main Loop
@@ -412,7 +434,7 @@ with mp_holistic.Holistic(
         if active_preset == 6 and results.left_hand_landmarks and results.right_hand_landmarks:
             frame_o = None
             if overlay_img is not None:
-                frame_o = overlay_img
+                frame_o = overlay_img.copy()
             elif overlay_cap is not None and overlay_cap.isOpened():
                 ret_o, frame_o = overlay_cap.read()
                 if not ret_o:
@@ -420,22 +442,36 @@ with mp_holistic.Holistic(
                     ret_o, frame_o = overlay_cap.read()
                 
             if frame_o is not None:
+                # Apply flips
+                if overlay_flip_h and overlay_flip_v:
+                    frame_o = cv2.flip(frame_o, -1)
+                elif overlay_flip_h:
+                    frame_o = cv2.flip(frame_o, 1)
+                elif overlay_flip_v:
+                    frame_o = cv2.flip(frame_o, 0)
+
                 h_o, w_o, _ = frame_o.shape
                 
+                # Compare horizontal position of index landmark (0) to identify visual left and right hands
+                lh_lms = results.left_hand_landmarks.landmark
+                rh_lms = results.right_hand_landmarks.landmark
+                
+                if lh_lms[0].x < rh_lms[0].x:
+                    vL = lh_lms
+                    vR = rh_lms
+                else:
+                    vL = rh_lms
+                    vR = lh_lms
+
                 # Target corners between Left & Right Hand's index and thumb tips:
                 # pt1 (Left Hand thumb tip)
-                # pt4 (Right Hand thumb tip)
-                # pt3 (Right Hand index tip)
                 # pt2 (Left Hand index tip)
-                lh_thumb = results.left_hand_landmarks.landmark[4]
-                lh_index = results.left_hand_landmarks.landmark[8]
-                rh_thumb = results.right_hand_landmarks.landmark[4]
-                rh_index = results.right_hand_landmarks.landmark[8]
-                
-                pt1 = (int(lh_thumb.x * w), int(lh_thumb.y * h))
-                pt2 = (int(lh_index.x * w), int(lh_index.y * h))
-                pt3 = (int(rh_index.x * w), int(rh_index.y * h))
-                pt4 = (int(rh_thumb.x * w), int(rh_thumb.y * h))
+                # pt3 (Right Hand index tip)
+                # pt4 (Right Hand thumb tip)
+                pt1 = (int(vL[4].x * w), int(vL[4].y * h))
+                pt2 = (int(vL[8].x * w), int(vL[8].y * h))
+                pt3 = (int(vR[8].x * w), int(vR[8].y * h))
+                pt4 = (int(vR[4].x * w), int(vR[4].y * h))
                 
                 # Source corners of the overlay video/image
                 src_pts = np.array([
@@ -445,27 +481,29 @@ with mp_holistic.Holistic(
                     [0, h_o - 1]
                 ], dtype=np.float32)
                 
-                # Destination corners
+                # Destination corners: Top-Left (pt2), Top-Right (pt3), Bottom-Right (pt4), Bottom-Left (pt1)
                 dst_pts = np.array([
-                    pt1,
-                    pt4,
+                    pt2,
                     pt3,
-                    pt2
+                    pt4,
+                    pt1
                 ], dtype=np.float32)
                 
-                # Compute perspective warp homography matrix
-                M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-                
-                # Warp overlay frame to fit screen dimensions (w, h)
-                warped_overlay = cv2.warpPerspective(frame_o, M, (w, h))
-                
-                # Create binary mask of the destination quad area
-                mask = np.zeros((h, w), dtype=np.uint8)
-                cv2.fillConvexPoly(mask, np.array([pt1, pt4, pt3, pt2], dtype=np.int32), 255)
-                
-                # Blend the warped media into the main frame
-                mask_3ch = cv2.merge([mask, mask, mask])
-                frame = np.where(mask_3ch == 255, warped_overlay, frame)
+                # Only warp if the destination quad is convex and non-self-intersecting
+                if is_convex(dst_pts):
+                    # Compute perspective warp homography matrix
+                    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+                    
+                    # Warp overlay frame to fit screen dimensions (w, h)
+                    warped_overlay = cv2.warpPerspective(frame_o, M, (w, h))
+                    
+                    # Create binary mask of the destination quad area
+                    mask = np.zeros((h, w), dtype=np.uint8)
+                    cv2.fillConvexPoly(mask, np.array([pt2, pt3, pt4, pt1], dtype=np.int32), 255)
+                    
+                    # Blend the warped media into the main frame
+                    mask_3ch = cv2.merge([mask, mask, mask])
+                    frame = np.where(mask_3ch == 255, warped_overlay, frame)
 
         # -------------------------
         # Status Text
@@ -616,6 +654,14 @@ with mp_holistic.Holistic(
                 else:
                     print(f"File not found: {file_path}")
             print("Resuming camera feed.\n")
+
+        elif key == ord('[') and active_preset == 6:
+            overlay_flip_h = not overlay_flip_h
+            print(f"Overlay Flip H: {'ON' if overlay_flip_h else 'OFF'}")
+
+        elif key == ord(']') and active_preset == 6:
+            overlay_flip_v = not overlay_flip_v
+            print(f"Overlay Flip V: {'ON' if overlay_flip_v else 'OFF'}")
 
         # Lock to 25 FPS (40ms interval)
         elapsed = time.time() - loop_start
