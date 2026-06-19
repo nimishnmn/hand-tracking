@@ -107,6 +107,9 @@ let activeStream = null;
 let handLandmarker = null;
 let poseLandmarker = null;
 let reqFrameId = null;
+let lastLeftHandLandmarks = null;
+let lastRightHandLandmarks = null;
+let lastPoseLandmarks = null;
 let loadingAnimation = null;
 let lastHandTimestamp = -1;
 let lastPoseTimestamp = -1;
@@ -320,27 +323,81 @@ async function renderLoop(nowMs) {
     }
   }
 
-  const results = {
-    image: videoElement,
-    poseLandmarks: null,
-    leftHandLandmarks: null,
-    rightHandLandmarks: null
-  };
-  
-  if (poseResult && poseResult.landmarks && poseResult.landmarks.length > 0) {
-    results.poseLandmarks = poseResult.landmarks[0];
-  }
+  let currentLeftHand = null;
+  let currentRightHand = null;
   
   if (handResult && handResult.landmarks && handResult.landmarks.length > 0) {
     for (let i = 0; i < handResult.landmarks.length; i++) {
       const handedness = handResult.handednesses[i][0].categoryName; 
       if (handedness === 'Left') {
-        results.leftHandLandmarks = handResult.landmarks[i];
+        currentLeftHand = handResult.landmarks[i];
       } else {
-        results.rightHandLandmarks = handResult.landmarks[i];
+        currentRightHand = handResult.landmarks[i];
       }
     }
   }
+
+  const alpha = 0.25; // Smoothing factor
+  
+  // Smooth & Persist Left Hand
+  if (currentLeftHand) {
+    if (!lastLeftHandLandmarks) {
+      lastLeftHandLandmarks = currentLeftHand.map(pt => ({ ...pt }));
+    } else {
+      for (let i = 0; i < 21; i++) {
+        lastLeftHandLandmarks[i].x += (currentLeftHand[i].x - lastLeftHandLandmarks[i].x) * alpha;
+        lastLeftHandLandmarks[i].y += (currentLeftHand[i].y - lastLeftHandLandmarks[i].y) * alpha;
+        lastLeftHandLandmarks[i].z += (currentLeftHand[i].z - lastLeftHandLandmarks[i].z) * alpha;
+        if (currentLeftHand[i].visibility !== undefined) {
+          lastLeftHandLandmarks[i].visibility = currentLeftHand[i].visibility;
+        }
+      }
+    }
+  }
+
+  // Smooth & Persist Right Hand
+  if (currentRightHand) {
+    if (!lastRightHandLandmarks) {
+      lastRightHandLandmarks = currentRightHand.map(pt => ({ ...pt }));
+    } else {
+      for (let i = 0; i < 21; i++) {
+        lastRightHandLandmarks[i].x += (currentRightHand[i].x - lastRightHandLandmarks[i].x) * alpha;
+        lastRightHandLandmarks[i].y += (currentRightHand[i].y - lastRightHandLandmarks[i].y) * alpha;
+        lastRightHandLandmarks[i].z += (currentRightHand[i].z - lastRightHandLandmarks[i].z) * alpha;
+        if (currentRightHand[i].visibility !== undefined) {
+          lastRightHandLandmarks[i].visibility = currentRightHand[i].visibility;
+        }
+      }
+    }
+  }
+
+  let currentPose = null;
+  if (poseResult && poseResult.landmarks && poseResult.landmarks.length > 0) {
+    currentPose = poseResult.landmarks[0];
+  }
+
+  // Smooth & Persist Pose
+  if (currentPose) {
+    if (!lastPoseLandmarks) {
+      lastPoseLandmarks = currentPose.map(pt => ({ ...pt }));
+    } else {
+      for (let i = 0; i < lastPoseLandmarks.length; i++) {
+        lastPoseLandmarks[i].x += (currentPose[i].x - lastPoseLandmarks[i].x) * alpha;
+        lastPoseLandmarks[i].y += (currentPose[i].y - lastPoseLandmarks[i].y) * alpha;
+        lastPoseLandmarks[i].z += (currentPose[i].z - lastPoseLandmarks[i].z) * alpha;
+        if (currentPose[i].visibility !== undefined) {
+          lastPoseLandmarks[i].visibility = currentPose[i].visibility;
+        }
+      }
+    }
+  }
+
+  const results = {
+    image: videoElement,
+    poseLandmarks: lastPoseLandmarks,
+    leftHandLandmarks: lastLeftHandLandmarks,
+    rightHandLandmarks: lastRightHandLandmarks
+  };
 
   // Draw base video frame
   canvasCtx.drawImage(results.image, 0, 0, w, h);
@@ -848,6 +905,10 @@ async function startTracking() {
 
 // Stop tracking & cleanup
 function stopTracking() {
+  lastLeftHandLandmarks = null;
+  lastRightHandLandmarks = null;
+  lastPoseLandmarks = null;
+
   if (reqFrameId) {
     cancelAnimationFrame(reqFrameId);
     reqFrameId = null;

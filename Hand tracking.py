@@ -14,6 +14,66 @@ mp_holistic = mp.solutions.holistic
 mp_drawing = mp.solutions.drawing_utils
 
 # -------------------------
+# Mock Classes for persistence & smoothing
+# -------------------------
+class MockLandmark:
+    def __init__(self, x, y, z, visibility=1.0):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.visibility = visibility
+
+class MockLandmarkList:
+    def __init__(self, landmarks):
+        self.landmark = landmarks
+
+class MockResults:
+    def __init__(self, pose_landmarks, left_hand_landmarks, right_hand_landmarks):
+        self.pose_landmarks = pose_landmarks
+        self.left_hand_landmarks = left_hand_landmarks
+        self.right_hand_landmarks = right_hand_landmarks
+
+def draw_hand_landmarks(frame, landmarks):
+    h, w, _ = frame.shape
+    # Joint connections
+    hand_conns = [
+        (0,1),(1,2),(2,3),(3,4),
+        (0,5),(5,6),(6,7),(7,8),
+        (0,9),(9,10),(10,11),(11,12),
+        (0,13),(13,14),(14,15),(15,16),
+        (0,17),(17,18),(18,19),(19,20),
+        (5,9),(9,13),(13,17),(0,5),(0,17)
+    ]
+    # Draw green lines (#00e676 -> BGR: (118, 230, 0))
+    for a, b in hand_conns:
+        pt1 = (int(landmarks.landmark[a].x * w), int(landmarks.landmark[a].y * h))
+        pt2 = (int(landmarks.landmark[b].x * w), int(landmarks.landmark[b].y * h))
+        cv2.line(frame, pt1, pt2, (118, 230, 0), 2)
+    # Draw white points
+    for lm in landmarks.landmark:
+        pt = (int(lm.x * w), int(lm.y * h))
+        cv2.circle(frame, pt, 3, (255, 255, 255), -1)
+
+def draw_pose_landmarks(frame, landmarks):
+    h, w, _ = frame.shape
+    pose_conns = [
+        (11,12),(11,13),(13,15),(12,14),(14,16), # arms
+        (11,23),(12,24),(23,24), # torso
+        (23,25),(25,27),(24,26),(26,28) # legs
+    ]
+    # Draw green lines (#00e676 -> BGR: (118, 230, 0))
+    for a, b in pose_conns:
+        if a < len(landmarks.landmark) and b < len(landmarks.landmark):
+            pt1 = (int(landmarks.landmark[a].x * w), int(landmarks.landmark[a].y * h))
+            pt2 = (int(landmarks.landmark[b].x * w), int(landmarks.landmark[b].y * h))
+            cv2.line(frame, pt1, pt2, (118, 230, 0), 2)
+    # Draw red/orange points (#ff3d00 -> BGR: (0, 61, 255))
+    for lm in landmarks.landmark:
+        if getattr(lm, 'visibility', 1.0) > 0.5:
+            pt = (int(lm.x * w), int(lm.y * h))
+            cv2.circle(frame, pt, 3, (0, 61, 255), -1)
+
+# -------------------------
 # Webcam Setup
 # -------------------------
 cap = cv2.VideoCapture(0)
@@ -30,6 +90,9 @@ flip_h = False
 flip_v = False
 active_preset = 1
 show_outline = False
+last_left_hand = None
+last_right_hand = None
+last_pose = None
 
 # -------------------------
 # Main Loop
@@ -68,7 +131,47 @@ with mp_holistic.Holistic(
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # Process frame
-        results = holistic.process(rgb)
+        raw_results = holistic.process(rgb)
+
+        alpha = 0.25  # Smoothing factor
+
+        # Smooth & Persist Left Hand
+        current_lh = raw_results.left_hand_landmarks
+        if current_lh:
+            if last_left_hand is None:
+                last_left_hand = MockLandmarkList([MockLandmark(lm.x, lm.y, lm.z, getattr(lm, 'visibility', 1.0)) for lm in current_lh.landmark])
+            else:
+                for i in range(21):
+                    last_left_hand.landmark[i].x += (current_lh.landmark[i].x - last_left_hand.landmark[i].x) * alpha
+                    last_left_hand.landmark[i].y += (current_lh.landmark[i].y - last_left_hand.landmark[i].y) * alpha
+                    last_left_hand.landmark[i].z += (current_lh.landmark[i].z - last_left_hand.landmark[i].z) * alpha
+                    last_left_hand.landmark[i].visibility = getattr(current_lh.landmark[i], 'visibility', 1.0)
+
+        # Smooth & Persist Right Hand
+        current_rh = raw_results.right_hand_landmarks
+        if current_rh:
+            if last_right_hand is None:
+                last_right_hand = MockLandmarkList([MockLandmark(lm.x, lm.y, lm.z, getattr(lm, 'visibility', 1.0)) for lm in current_rh.landmark])
+            else:
+                for i in range(21):
+                    last_right_hand.landmark[i].x += (current_rh.landmark[i].x - last_right_hand.landmark[i].x) * alpha
+                    last_right_hand.landmark[i].y += (current_rh.landmark[i].y - last_right_hand.landmark[i].y) * alpha
+                    last_right_hand.landmark[i].z += (current_rh.landmark[i].z - last_right_hand.landmark[i].z) * alpha
+                    last_right_hand.landmark[i].visibility = getattr(current_rh.landmark[i], 'visibility', 1.0)
+
+        # Smooth & Persist Pose
+        current_pose = raw_results.pose_landmarks
+        if current_pose:
+            if last_pose is None:
+                last_pose = MockLandmarkList([MockLandmark(lm.x, lm.y, lm.z, getattr(lm, 'visibility', 1.0)) for lm in current_pose.landmark])
+            else:
+                for i in range(len(last_pose.landmark)):
+                    last_pose.landmark[i].x += (current_pose.landmark[i].x - last_pose.landmark[i].x) * alpha
+                    last_pose.landmark[i].y += (current_pose.landmark[i].y - last_pose.landmark[i].y) * alpha
+                    last_pose.landmark[i].z += (current_pose.landmark[i].z - last_pose.landmark[i].z) * alpha
+                    last_pose.landmark[i].visibility = getattr(current_pose.landmark[i], 'visibility', 1.0)
+
+        results = MockResults(last_pose, last_left_hand, last_right_hand)
 
         # Preset 2: Reduce exposure of background video by 75%
         if active_preset == 2:
@@ -89,31 +192,19 @@ with mp_holistic.Holistic(
         # Draw Pose
         # -------------------------
         if show_pose and results.pose_landmarks:
-            mp_drawing.draw_landmarks(
-                frame,
-                results.pose_landmarks,
-                mp_holistic.POSE_CONNECTIONS
-            )
+            draw_pose_landmarks(frame, results.pose_landmarks)
 
         # -------------------------
         # Draw Left Hand
         # -------------------------
         if show_hands and results.left_hand_landmarks:
-            mp_drawing.draw_landmarks(
-                frame,
-                results.left_hand_landmarks,
-                mp_holistic.HAND_CONNECTIONS
-            )
+            draw_hand_landmarks(frame, results.left_hand_landmarks)
 
         # -------------------------
         # Draw Right Hand
         # -------------------------
         if show_hands and results.right_hand_landmarks:
-            mp_drawing.draw_landmarks(
-                frame,
-                results.right_hand_landmarks,
-                mp_holistic.HAND_CONNECTIONS
-            )
+            draw_hand_landmarks(frame, results.right_hand_landmarks)
 
         # -------------------------
         # Corner-pinned White Rectangle (Preset 1 Only)
