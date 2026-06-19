@@ -11,6 +11,8 @@ const progressBarFill = document.getElementById('progress-bar-fill');
 const controlBar = document.getElementById('control-bar');
 const btnPose = document.getElementById('btn-pose');
 const btnHands = document.getElementById('btn-hands');
+const btnFlipH = document.getElementById('btn-fliph');
+const btnFlipV = document.getElementById('btn-flipv');
 const btnQuit = document.getElementById('btn-quit');
 
 // Global States
@@ -27,13 +29,16 @@ const options = {
   showPose: false,
   showHands: false,
   showCornerpin: true, // Always active
-  mirror: true
+  flipH: false,
+  flipV: false
 };
 
 // Update CSS classes for active buttons
 function updateButtonHighlights() {
   btnPose.classList.toggle('active', options.showPose);
   btnHands.classList.toggle('active', options.showHands);
+  btnFlipH.classList.toggle('active', options.flipH);
+  btnFlipV.classList.toggle('active', options.flipV);
 }
 
 // Attach tap/click events to on-screen control buttons
@@ -48,6 +53,18 @@ btnHands.addEventListener('click', () => {
   options.showHands = !options.showHands;
   updateButtonHighlights();
   console.log(`Hands: ${options.showHands ? 'ON' : 'OFF'}`);
+});
+
+btnFlipH.addEventListener('click', () => {
+  options.flipH = !options.flipH;
+  updateButtonHighlights();
+  console.log(`Flip H: ${options.flipH ? 'ON' : 'OFF'}`);
+});
+
+btnFlipV.addEventListener('click', () => {
+  options.flipV = !options.flipV;
+  updateButtonHighlights();
+  console.log(`Flip V: ${options.flipV ? 'ON' : 'OFF'}`);
 });
 
 btnQuit.addEventListener('click', () => {
@@ -125,10 +142,15 @@ holistic.onResults((results) => {
   canvasCtx.save();
   canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-  // 1. Mirror transformation if active
-  if (options.mirror) {
-    canvasCtx.translate(canvasElement.width, 0);
-    canvasCtx.scale(-1, 1);
+  // 1. Mirror / Flip transformation if active
+  if (options.flipH || options.flipV) {
+    const tX = options.flipH ? canvasElement.width : 0;
+    const tY = options.flipV ? canvasElement.height : 0;
+    const sX = options.flipH ? -1 : 1;
+    const sY = options.flipV ? -1 : 1;
+    
+    canvasCtx.translate(tX, tY);
+    canvasCtx.scale(sX, sY);
   }
 
   // Draw base video frame
@@ -219,12 +241,18 @@ holistic.onResults((results) => {
   // Draw Hands Status
   canvasCtx.fillText(`Hands [H]: ${options.showHands ? 'ON' : 'OFF'}`, 20, 75);
 
+  // Draw Flip H Status
+  canvasCtx.fillText(`Flip H [X]: ${options.flipH ? 'ON' : 'OFF'}`, 20, 110);
+
+  // Draw Flip V Status
+  canvasCtx.fillText(`Flip V [Y]: ${options.flipV ? 'ON' : 'OFF'}`, 20, 145);
+
   // Draw ESC = Quit status
   canvasCtx.fillStyle = 'rgb(0, 255, 255)';
-  canvasCtx.fillText('ESC = Quit', 20, 110);
+  canvasCtx.fillText('ESC = Quit', 20, 180);
 
   // Draw FPS Status
-  canvasCtx.fillText(`FPS: ${fps}`, 20, 145);
+  canvasCtx.fillText(`FPS: ${fps}`, 20, 215);
 });
 
 // Setup Keyboard Listeners (Replicating desktop tracking control shortcuts)
@@ -244,6 +272,14 @@ document.addEventListener('keydown', (event) => {
     options.showPose = !options.showPose;
     updateButtonHighlights();
     console.log(`Pose: ${options.showPose ? 'ON' : 'OFF'}`);
+  } else if (key === 'x') {
+    options.flipH = !options.flipH;
+    updateButtonHighlights();
+    console.log(`Flip H: ${options.flipH ? 'ON' : 'OFF'}`);
+  } else if (key === 'y') {
+    options.flipV = !options.flipV;
+    updateButtonHighlights();
+    console.log(`Flip V: ${options.flipV ? 'ON' : 'OFF'}`);
   }
 });
 

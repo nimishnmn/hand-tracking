@@ -22,6 +22,8 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 # -------------------------
 show_pose = False
 show_hands = False
+flip_h = False
+flip_v = False
 
 # -------------------------
 # Main Loop
@@ -46,8 +48,13 @@ with mp_holistic.Holistic(
             print("Failed to read webcam.")
             break
 
-        # Mirror image
-        frame = frame
+        # Mirror / Flip image
+        if flip_h and flip_v:
+            frame = cv2.flip(frame, -1)
+        elif flip_h:
+            frame = cv2.flip(frame, 1)
+        elif flip_v:
+            frame = cv2.flip(frame, 0)
 
         # Convert BGR -> RGB
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -140,8 +147,28 @@ with mp_holistic.Holistic(
 
         cv2.putText(
             frame,
-            "ESC = Quit",
+            f"Flip H [X]: {'ON' if flip_h else 'OFF'}",
             (20, 110),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 0),
+            2
+        )
+
+        cv2.putText(
+            frame,
+            f"Flip V [Y]: {'ON' if flip_v else 'OFF'}",
+            (20, 145),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 0),
+            2
+        )
+
+        cv2.putText(
+            frame,
+            "ESC = Quit",
+            (20, 180),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (0, 255, 255),
@@ -151,7 +178,7 @@ with mp_holistic.Holistic(
         cv2.putText(
             frame,
             f"FPS: {fps}",
-            (20, 145),
+            (20, 215),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (0, 255, 255),
@@ -176,6 +203,14 @@ with mp_holistic.Holistic(
         elif key == ord('p'):
             show_pose = not show_pose
             print(f"Pose: {'ON' if show_pose else 'OFF'}")
+
+        elif key == ord('x'):
+            flip_h = not flip_h
+            print(f"Flip H: {'ON' if flip_h else 'OFF'}")
+
+        elif key == ord('y'):
+            flip_v = not flip_v
+            print(f"Flip V: {'ON' if flip_v else 'OFF'}")
 
 
 
