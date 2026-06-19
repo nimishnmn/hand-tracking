@@ -544,16 +544,6 @@ async function renderLoop(nowMs) {
       canvasCtx.clip();
       canvasCtx.drawImage(offscreenCanvas, 0, 0, w, h);
       canvasCtx.restore();
-
-      canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-      canvasCtx.lineWidth = 2;
-      canvasCtx.beginPath();
-      canvasCtx.moveTo(pts[0].x, pts[0].y);
-      canvasCtx.lineTo(pts[1].x, pts[1].y);
-      canvasCtx.lineTo(pts[2].x, pts[2].y);
-      canvasCtx.lineTo(pts[3].x, pts[3].y);
-      canvasCtx.closePath();
-      canvasCtx.stroke();
     }
   }
 

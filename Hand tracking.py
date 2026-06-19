@@ -224,7 +224,6 @@ with mp_holistic.Holistic(
 
                 mask_3ch = cv2.merge([mask, mask, mask])
                 frame = np.where(mask_3ch == 255, filtered, frame)
-                cv2.polylines(frame, [pts], True, (255, 255, 255), 2)
 
         # -------------------------
         # Preset 4: Ghost Trails
