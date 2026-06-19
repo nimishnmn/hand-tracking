@@ -92,7 +92,19 @@ let btnPreset2;
 let btnPreset3;
 let btnPreset4;
 let btnPreset5;
+let btnPreset6;
 let btnOutline;
+
+let preset6Panel;
+let preset6PreviewContainer;
+let preset6LinkInput;
+let preset6LoadBtn;
+let preset6OverlayContainer;
+
+// YouTube Players
+let ytPreviewPlayer = null;
+let ytOverlayPlayer = null;
+let ytInterval = null;
 
 // Offscreen canvas for pixel manipulation (Preset 3)
 let offscreenCanvas;
@@ -116,6 +128,219 @@ let lastPoseTimestamp = -1;
 let lastFrameTime = 0;
 let lastRenderTime = 0;
 let fps = 0;
+
+// Gaussian Elimination for Homography mapping
+function solveGaussian(A, b) {
+  const n = b.length;
+  for (let i = 0; i < n; i++) {
+    let maxEl = Math.abs(A[i][i]);
+    let maxRow = i;
+    for (let k = i + 1; k < n; k++) {
+      if (Math.abs(A[k][i]) > maxEl) {
+        maxEl = Math.abs(A[k][i]);
+        maxRow = k;
+      }
+    }
+    for (let k = i; k < n; k++) {
+      const tmp = A[maxRow][k];
+      A[maxRow][k] = A[i][k];
+      A[i][k] = tmp;
+    }
+    const tmp = b[maxRow];
+    b[maxRow] = b[i];
+    b[i] = tmp;
+
+    for (let k = i + 1; k < n; k++) {
+      const c = -A[k][i] / A[i][i];
+      for (let j = i; j < n; j++) {
+        if (i === j) {
+          A[k][j] = 0;
+        } else {
+          A[k][j] += c * A[i][j];
+        }
+      }
+      b[k] += c * b[i];
+    }
+  }
+
+  const x = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    x[i] = b[i] / A[i][i];
+    for (let k = i - 1; k >= 0; k--) {
+      b[k] -= A[k][i] * x[i];
+    }
+  }
+  return x;
+}
+
+function getHomographyMatrix(src, dst) {
+  const A = [];
+  const b = [];
+  for (let i = 0; i < 4; i++) {
+    const u = src[i][0];
+    const v = src[i][1];
+    const x = dst[i][0];
+    const y = dst[i][1];
+    A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]);
+    b.push(x);
+    A.push([0, 0, 0, u, v, 1, -u * y, -v * y]);
+    b.push(y);
+  }
+  const c = solveGaussian(A, b);
+  return [
+    c[0], c[3], 0, c[6],
+    c[1], c[4], 0, c[7],
+    0,    0,    1, 0,
+    c[2], c[5], 0, 1
+  ];
+}
+
+function getYouTubeId(url) {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
+// Load YouTube Iframe API globally
+(function loadYTScript() {
+  if (!window.YT) {
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    const firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+  }
+})();
+
+function loadVideo(url) {
+  const ytId = getYouTubeId(url);
+  
+  if (ytInterval) {
+    clearInterval(ytInterval);
+    ytInterval = null;
+  }
+  
+  if (ytId) {
+    if (window.YT && window.YT.Player) {
+      initYouTubePlayers(ytId);
+    } else {
+      setTimeout(() => loadVideo(url), 500);
+    }
+  } else {
+    ytPreviewPlayer = null;
+    ytOverlayPlayer = null;
+    initDirectVideo(url);
+  }
+}
+
+function initYouTubePlayers(videoId) {
+  preset6PreviewContainer.innerHTML = '<div id="preset6-preview-player"></div>';
+  preset6OverlayContainer.innerHTML = '<div id="preset6-overlay-player" style="position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; pointer-events: none;"></div>';
+  
+  ytPreviewPlayer = new YT.Player('preset6-preview-player', {
+    width: '100%',
+    height: '100%',
+    videoId: videoId,
+    playerVars: {
+      controls: 1,
+      autoplay: 1,
+      mute: 0
+    },
+    events: {
+      'onStateChange': onPreviewStateChange
+    }
+  });
+  
+  ytOverlayPlayer = new YT.Player('preset6-overlay-player', {
+    width: '640',
+    height: '360',
+    videoId: videoId,
+    playerVars: {
+      controls: 0,
+      autoplay: 1,
+      mute: 1,
+      disablekb: 1,
+      fs: 0,
+      rel: 0,
+      showinfo: 0,
+      iv_load_policy: 3
+    }
+  });
+
+  ytInterval = setInterval(() => {
+    if (ytPreviewPlayer && ytOverlayPlayer && ytPreviewPlayer.getPlayerState && ytOverlayPlayer.getPlayerState) {
+      if (ytPreviewPlayer.getPlayerState() === YT.PlayerState.PLAYING) {
+        const diff = Math.abs(ytPreviewPlayer.getCurrentTime() - ytOverlayPlayer.getCurrentTime());
+        if (diff > 0.3) {
+          ytOverlayPlayer.seekTo(ytPreviewPlayer.getCurrentTime(), true);
+        }
+      }
+    }
+  }, 500);
+}
+
+function onPreviewStateChange(event) {
+  if (!ytOverlayPlayer || !ytOverlayPlayer.getPlayerState) return;
+  const state = event.data;
+  if (state === YT.PlayerState.PLAYING) {
+    ytOverlayPlayer.seekTo(ytPreviewPlayer.getCurrentTime(), true);
+    ytOverlayPlayer.playVideo();
+  } else if (state === YT.PlayerState.PAUSED) {
+    ytOverlayPlayer.pauseVideo();
+    ytOverlayPlayer.seekTo(ytPreviewPlayer.getCurrentTime(), true);
+  } else if (state === YT.PlayerState.ENDED) {
+    ytOverlayPlayer.stopVideo();
+  }
+}
+
+function initDirectVideo(url) {
+  preset6PreviewContainer.innerHTML = `
+    <video id="preset6-preview-video" controls autoplay style="width: 100%; height: 100%;">
+      <source src="${url}">
+    </video>
+  `;
+  preset6OverlayContainer.innerHTML = `
+    <video id="preset6-overlay-video" muted autoplay loop playsinline style="position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; pointer-events: none;">
+      <source src="${url}">
+    </video>
+  `;
+  
+  const previewVideo = document.getElementById('preset6-preview-video');
+  const overlayVideo = document.getElementById('preset6-overlay-video');
+  
+  if (previewVideo && overlayVideo) {
+    previewVideo.addEventListener('play', () => overlayVideo.play());
+    previewVideo.addEventListener('pause', () => overlayVideo.pause());
+    previewVideo.addEventListener('seeking', () => {
+      overlayVideo.currentTime = previewVideo.currentTime;
+    });
+    previewVideo.addEventListener('seeked', () => {
+      overlayVideo.currentTime = previewVideo.currentTime;
+    });
+    previewVideo.addEventListener('timeupdate', () => {
+      const diff = Math.abs(previewVideo.currentTime - overlayVideo.currentTime);
+      if (diff > 0.3) {
+        overlayVideo.currentTime = previewVideo.currentTime;
+      }
+    });
+  }
+}
+
+function pausePlayers() {
+  if (ytPreviewPlayer && ytPreviewPlayer.pauseVideo) {
+    ytPreviewPlayer.pauseVideo();
+  }
+  if (ytOverlayPlayer && ytOverlayPlayer.pauseVideo) {
+    ytOverlayPlayer.pauseVideo();
+  }
+  const previewVideo = document.getElementById('preset6-preview-video');
+  const overlayVideo = document.getElementById('preset6-overlay-video');
+  if (previewVideo && previewVideo.pause) {
+    previewVideo.pause();
+  }
+  if (overlayVideo && overlayVideo.pause) {
+    overlayVideo.pause();
+  }
+}
 
 // Default toggle states (All OFF by default)
 const options = {
@@ -143,6 +368,7 @@ function updatePresetHighlights() {
   btnPreset3.classList.toggle('active', options.activePreset === 3);
   btnPreset4.classList.toggle('active', options.activePreset === 4);
   btnPreset5.classList.toggle('active', options.activePreset === 5);
+  btnPreset6.classList.toggle('active', options.activePreset === 6);
   btnOutline.classList.toggle('active', options.showOutline);
 
   // Show outline toggle only when Preset 3 is active and tracking is active
@@ -150,6 +376,20 @@ function updatePresetHighlights() {
     btnOutline.style.display = 'block';
   } else {
     btnOutline.style.display = 'none';
+  }
+
+  // Show Preset 6 control panel and overlay only when Preset 6 is active and tracking is active
+  if (activeStream && options.activePreset === 6) {
+    preset6Panel.style.display = 'flex';
+    preset6OverlayContainer.style.display = 'block';
+    
+    if (!document.getElementById('preset6-preview-video') && !ytPreviewPlayer) {
+      loadVideo("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4");
+    }
+  } else {
+    preset6Panel.style.display = 'none';
+    preset6OverlayContainer.style.display = 'none';
+    pausePlayers();
   }
 }
 
@@ -179,7 +419,14 @@ document.addEventListener('DOMContentLoaded', () => {
   btnPreset3 = document.getElementById('preset-3');
   btnPreset4 = document.getElementById('preset-4');
   btnPreset5 = document.getElementById('preset-5');
+  btnPreset6 = document.getElementById('preset-6');
   btnOutline = document.getElementById('btn-outline');
+
+  preset6Panel = document.getElementById('preset6-panel');
+  preset6PreviewContainer = document.getElementById('preset6-preview-container');
+  preset6LinkInput = document.getElementById('preset6-link-input');
+  preset6LoadBtn = document.getElementById('preset6-load-btn');
+  preset6OverlayContainer = document.getElementById('preset6-overlay-container');
 
   // Offscreen canvas for pixel manipulation (Preset 3)
   offscreenCanvas = document.createElement('canvas');
@@ -224,6 +471,19 @@ document.addEventListener('DOMContentLoaded', () => {
     options.activePreset = 5;
     updatePresetHighlights();
     console.log('Preset 5 activated');
+  });
+
+  btnPreset6.addEventListener('click', () => {
+    options.activePreset = 6;
+    updatePresetHighlights();
+    console.log('Preset 6 activated');
+  });
+
+  preset6LoadBtn.addEventListener('click', () => {
+    const url = preset6LinkInput.value.trim();
+    if (url) {
+      loadVideo(url);
+    }
   });
 
   btnOutline.addEventListener('click', () => {
@@ -513,21 +773,22 @@ async function renderLoop(nowMs) {
         const dy = pt1.y - pt2.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        // Length reactive color spectrum (Cyan to Pink/Magenta)
+        // Length reactive thickness and color (red when short, thinner/whiter when far)
         const ratio = Math.min(dist / (maxDiag * 0.65), 1.0);
-        const hue = 180 + ratio * 140;
+        const glowWidth = Math.max(1.0, 8.0 - 6.0 * ratio);
+        const coreWidth = Math.max(0.5, 2.0 - 1.2 * ratio);
 
-        // 1. Thicker outer glow line
-        canvasCtx.lineWidth = 4;
-        canvasCtx.strokeStyle = `hsla(${hue}, 100%, 55%, 0.3)`;
+        // 1. Thicker outer glow line (transitioning from red to white)
+        canvasCtx.lineWidth = glowWidth;
+        canvasCtx.strokeStyle = `hsla(0, ${100 * (1 - ratio)}%, ${50 + 50 * ratio}%, 0.45)`;
         canvasCtx.beginPath();
         canvasCtx.moveTo(pt1.x, pt1.y);
         canvasCtx.lineTo(pt2.x, pt2.y);
         canvasCtx.stroke();
 
-        // 2. Thinner inner core line
-        canvasCtx.lineWidth = 1.5;
-        canvasCtx.strokeStyle = `hsla(${hue}, 100%, 85%, 0.8)`;
+        // 2. Thinner inner core line (transitioning from light red to white)
+        canvasCtx.lineWidth = coreWidth;
+        canvasCtx.strokeStyle = `hsla(0, ${100 * (1 - ratio)}%, ${75 + 25 * ratio}%, 0.85)`;
         canvasCtx.beginPath();
         canvasCtx.moveTo(pt1.x, pt1.y);
         canvasCtx.lineTo(pt2.x, pt2.y);
@@ -741,6 +1002,36 @@ async function renderLoop(nowMs) {
     canvasCtx.restore();
   }
 
+  // ===== PRESET 6: YouTube/Video Corner-pinned Overlay =====
+  if (options.activePreset === 6 && results.leftHandLandmarks && results.rightHandLandmarks) {
+    const lh = results.leftHandLandmarks;
+    const rh = results.rightHandLandmarks;
+    
+    const rect = canvasElement.getBoundingClientRect();
+    preset6OverlayContainer.style.left = rect.left + 'px';
+    preset6OverlayContainer.style.top = rect.top + 'px';
+    preset6OverlayContainer.style.width = rect.width + 'px';
+    preset6OverlayContainer.style.height = rect.height + 'px';
+    
+    const playerEl = document.getElementById('preset6-overlay-player') || document.getElementById('preset6-overlay-video');
+    if (playerEl) {
+      const pt1 = { x: lh[4].x * rect.width, y: lh[4].y * rect.height };
+      const pt2 = { x: lh[8].x * rect.width, y: lh[8].y * rect.height };
+      const pt3 = { x: rh[8].x * rect.width, y: rh[8].y * rect.height };
+      const pt4 = { x: rh[4].x * rect.width, y: rh[4].y * rect.height };
+      
+      const src = [[0, 0], [640, 0], [640, 360], [0, 360]];
+      const dst = [[pt1.x, pt1.y], [pt4.x, pt4.y], [pt3.x, pt3.y], [pt2.x, pt2.y]];
+      
+      try {
+        const matrix = getHomographyMatrix(src, dst);
+        playerEl.style.transform = `matrix3d(${matrix.join(',')})`;
+      } catch (err) {
+        console.error('Error computing homography matrix:', err);
+      }
+    }
+  }
+
   canvasCtx.restore(); // Restore flip scale/translate, returning context to clean screen-space
 
   // 3. Draw HUD Skeletons Status (Exactly replicating CV2 putText colors & positions)
@@ -798,6 +1089,10 @@ document.addEventListener('keydown', (event) => {
     options.activePreset = 5;
     updatePresetHighlights();
     console.log('Preset 5 activated');
+  } else if (key === '6') {
+    options.activePreset = 6;
+    updatePresetHighlights();
+    console.log('Preset 6 activated');
   } else if (key === 'o' && options.activePreset === 3) {
     options.showOutline = !options.showOutline;
     updatePresetHighlights();
@@ -941,6 +1236,13 @@ function stopTracking() {
   controlBar.style.display = 'none';
   presetSelector.style.display = 'none';
   btnOutline.style.display = 'none';
+  preset6Panel.style.display = 'none';
+  preset6OverlayContainer.style.display = 'none';
+  pausePlayers();
+  if (ytInterval) {
+    clearInterval(ytInterval);
+    ytInterval = null;
+  }
   startCameraBtn.style.display = 'block';
 
   if (handLandmarker) {

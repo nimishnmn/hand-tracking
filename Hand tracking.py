@@ -94,6 +94,10 @@ last_left_hand = None
 last_right_hand = None
 last_pose = None
 
+# Preset 6 video variables
+overlay_url = "sample.mp4"
+overlay_cap = None
+
 # -------------------------
 # Main Loop
 # -------------------------
@@ -255,16 +259,25 @@ with mp_holistic.Holistic(
                     dy = pt1[1] - pt2[1]
                     d = math.sqrt(dx*dx + dy*dy)
                     
-                    # Color reactive (Cyan to Magenta gradient in BGR)
+                    # Length reactive thickness and color (red when short, thinner/whiter when far)
                     ratio = min(d / (1468.0 * 0.65), 1.0)
-                    b = 255
-                    g = int(255 * (1.0 - ratio))
-                    r = int(255 * ratio)
+                    glow_thick = max(1, int(8 - 6 * ratio))
+                    core_thick = max(1, int(2 - 1 * ratio))
+                    
+                    # Outer glow color (red to white in BGR)
+                    b_glow = int(255 * ratio)
+                    g_glow = int(255 * ratio)
+                    r_glow = 255
+                    
+                    # Inner core color (light red to white in BGR)
+                    b_core = int(128 + 127 * ratio)
+                    g_core = int(128 + 127 * ratio)
+                    r_core = 255
                     
                     # 1. Thicker outer glow line
-                    cv2.line(overlay, pt1, pt2, (b, g, r), 4)
+                    cv2.line(overlay, pt1, pt2, (b_glow, g_glow, r_glow), glow_thick)
                     # 2. Thinner inner core line
-                    cv2.line(overlay, pt1, pt2, (255, 255, 255), 1)
+                    cv2.line(overlay, pt1, pt2, (b_core, g_core, r_core), core_thick)
             
             # Blend overlay to achieve semi-transparent glow lines
             cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
@@ -391,6 +404,66 @@ with mp_holistic.Holistic(
                     pt = (int(rh[i].x * w), int(rh[i].y * h))
                     cv2.circle(frame, pt, r, (255, 0, 200), -1)
 
+
+        # -------------------------
+        # Preset 6: YouTube/Video Corner-pinned Overlay
+        # -------------------------
+        if active_preset == 6 and results.left_hand_landmarks and results.right_hand_landmarks:
+            if overlay_cap is not None and overlay_cap.isOpened():
+                ret_o, frame_o = overlay_cap.read()
+                if not ret_o:
+                    # Loop video back to beginning if it ends
+                    overlay_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret_o, frame_o = overlay_cap.read()
+                
+                if ret_o and frame_o is not None:
+                    h_o, w_o, _ = frame_o.shape
+                    
+                    # Target corners between Left & Right Hand's index and thumb tips:
+                    # pt1 (Left Hand thumb tip)
+                    # pt4 (Right Hand thumb tip)
+                    # pt3 (Right Hand index tip)
+                    # pt2 (Left Hand index tip)
+                    lh_thumb = results.left_hand_landmarks.landmark[4]
+                    lh_index = results.left_hand_landmarks.landmark[8]
+                    rh_thumb = results.right_hand_landmarks.landmark[4]
+                    rh_index = results.right_hand_landmarks.landmark[8]
+                    
+                    pt1 = (int(lh_thumb.x * w), int(lh_thumb.y * h))
+                    pt2 = (int(lh_index.x * w), int(lh_index.y * h))
+                    pt3 = (int(rh_index.x * w), int(rh_index.y * h))
+                    pt4 = (int(rh_thumb.x * w), int(rh_thumb.y * h))
+                    
+                    # Source corners of the overlay video
+                    src_pts = np.array([
+                        [0, 0],
+                        [w_o - 1, 0],
+                        [w_o - 1, h_o - 1],
+                        [0, h_o - 1]
+                    ], dtype=np.float32)
+                    
+                    # Destination corners
+                    dst_pts = np.array([
+                        pt1,
+                        pt4,
+                        pt3,
+                        pt2
+                    ], dtype=np.float32)
+                    
+                    # Compute perspective warp homography matrix
+                    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+                    
+                    # Warp overlay frame to fit screen dimensions (w, h)
+                    warped_overlay = cv2.warpPerspective(frame_o, M, (w, h))
+                    
+                    # Create binary mask of the destination quad area
+                    mask = np.zeros((h, w), dtype=np.uint8)
+                    cv2.fillConvexPoly(mask, np.array([pt1, pt4, pt3, pt2], dtype=np.int32), 255)
+                    
+                    # Blend the warped video into the main frame
+                    mask_3ch = cv2.merge([mask, mask, mask])
+                    frame = np.where(mask_3ch == 255, warped_overlay, frame)
+
         # -------------------------
         # Status Text
         # -------------------------
@@ -405,8 +478,8 @@ with mp_holistic.Holistic(
         )
 
         # Draw top-right presets HUD
-        start_x = w - 320
-        for pi in range(1, 6):
+        start_x = w - 380
+        for pi in range(1, 7):
             box_x = start_x + (pi - 1) * 50
             color_box = (0, 255, 0) if active_preset == pi else (100, 100, 100)
             thick_box = -1 if active_preset == pi else 2
@@ -416,7 +489,7 @@ with mp_holistic.Holistic(
 
         # Draw Outline Toggle Box (O) only when Preset 3 is active
         if active_preset == 3:
-            box_x = start_x + 5 * 50
+            box_x = start_x + 6 * 50
             color_box = (0, 255, 0) if show_outline else (100, 100, 100)
             thick_box = -1 if show_outline else 2
             cv2.rectangle(frame, (box_x, 20), (box_x + 40, 60), color_box, thick_box)
@@ -475,6 +548,87 @@ with mp_holistic.Holistic(
             active_preset = 5
             print("Preset 5 activated")
 
+        elif key == ord('6'):
+            active_preset = 6
+            print("Preset 6 activated")
+            if overlay_cap is None:
+                import os
+                if overlay_url == "sample.mp4" and not os.path.exists("sample.mp4"):
+                    print("Default video 'sample.mp4' not found. Downloading...")
+                    import subprocess
+                    try:
+                        subprocess.run(["curl", "-L", "-o", "sample.mp4", "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/person-bicycle-car-detection.mp4"], check=True)
+                        print("Download complete.")
+                    except Exception as e:
+                        print(f"Failed to download default video: {e}")
+                overlay_cap = cv2.VideoCapture(overlay_url)
+
+        elif key == ord('u') and active_preset == 6:
+            print("\n--- Video Source Update ---")
+            print("Camera feed paused. Please go to your terminal to update.")
+            new_url = input("Enter local video path (e.g. sample.mp4) or direct web MP4/YouTube URL: ").strip()
+            if new_url:
+                if new_url.startswith("http://") or new_url.startswith("https://"):
+                    import subprocess
+                    import os
+                    # If it's a YouTube link, download it using yt_dlp
+                    if "youtube.com" in new_url or "youtu.be" in new_url:
+                        print("Downloading YouTube video via yt-dlp...")
+                        try:
+                            result = subprocess.run([
+                                "python3", "-m", "yt_dlp",
+                                "-o", "temp_preset6.mp4",
+                                "-f", "best[ext=mp4]/best",
+                                "--no-playlist",
+                                new_url
+                            ], capture_output=True, text=True)
+                            if result.returncode == 0 and os.path.exists("temp_preset6.mp4"):
+                                overlay_url = "temp_preset6.mp4"
+                                print("YouTube download complete. Playing video...")
+                            else:
+                                print(f"YouTube download failed: {result.stderr}")
+                                print("Retrying with worst quality format...")
+                                result_retry = subprocess.run([
+                                    "python3", "-m", "yt_dlp",
+                                    "-o", "temp_preset6.mp4",
+                                    "-f", "worst[ext=mp4]/worst",
+                                    "--no-playlist",
+                                    new_url
+                                ], capture_output=True, text=True)
+                                if result_retry.returncode == 0 and os.path.exists("temp_preset6.mp4"):
+                                    overlay_url = "temp_preset6.mp4"
+                                    print("YouTube download complete (fallback quality). Playing video...")
+                                else:
+                                    print("YouTube download fallback failed.")
+                        except Exception as e:
+                            print(f"Error running yt-dlp: {e}")
+                    else:
+                        print("Downloading direct video stream via curl...")
+                        try:
+                            if os.path.exists("temp_preset6.mp4"):
+                                os.remove("temp_preset6.mp4")
+                            result = subprocess.run(["curl", "-L", "-o", "temp_preset6.mp4", new_url], capture_output=True)
+                            if result.returncode == 0 and os.path.exists("temp_preset6.mp4") and os.path.getsize("temp_preset6.mp4") > 1000:
+                                overlay_url = "temp_preset6.mp4"
+                                print("Download complete. Playing video...")
+                            else:
+                                print("Download failed or empty file. Check URL or network.")
+                        except Exception as e:
+                            print(f"Error downloading stream: {e}")
+                else:
+                    import os
+                    if os.path.exists(new_url):
+                        overlay_url = new_url
+                        print(f"Playing local video: {new_url}")
+                    else:
+                        print(f"File not found: {new_url}")
+                
+                # Reopen Cap
+                if overlay_cap is not None:
+                    overlay_cap.release()
+                overlay_cap = cv2.VideoCapture(overlay_url)
+            print("Resuming camera feed.\n")
+
         # Lock to 25 FPS (40ms interval)
         elapsed = time.time() - loop_start
         remaining = 0.04 - elapsed
@@ -487,4 +641,6 @@ with mp_holistic.Holistic(
 # Cleanup
 # -------------------------
 cap.release()
+if overlay_cap is not None:
+    overlay_cap.release()
 cv2.destroyAllWindows()
