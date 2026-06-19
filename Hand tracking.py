@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 import numpy as np
+import time
 
 # -------------------------
 # MediaPipe Setup
@@ -25,6 +26,8 @@ show_hands = False
 # -------------------------
 # Main Loop
 # -------------------------
+prev_time = 0
+
 with mp_holistic.Holistic(
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
@@ -33,6 +36,11 @@ with mp_holistic.Holistic(
     while True:
 
         success, frame = cap.read()
+        
+        # Calculate FPS
+        current_time = time.time()
+        fps = int(1 / (current_time - prev_time)) if prev_time > 0 else 0
+        prev_time = current_time
 
         if not success:
             print("Failed to read webcam.")
@@ -134,6 +142,16 @@ with mp_holistic.Holistic(
             frame,
             "ESC = Quit",
             (20, 110),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 255),
+            2
+        )
+
+        cv2.putText(
+            frame,
+            f"FPS: {fps}",
+            (20, 145),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (0, 255, 255),

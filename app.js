@@ -19,6 +19,8 @@ let camera = null;
 let progressVal = 0;
 let progressInterval = null;
 let isLoaded = false;
+let lastFrameTime = 0;
+let fps = 0;
 
 // Default toggle states (All OFF by default)
 const options = {
@@ -110,6 +112,14 @@ holistic.onResults((results) => {
     isLoaded = true;
     finishLoadingProgress();
   }
+
+  // Calculate FPS
+  const now = performance.now();
+  if (lastFrameTime > 0) {
+    const delta = (now - lastFrameTime) / 1000;
+    fps = Math.round(1 / delta);
+  }
+  lastFrameTime = now;
 
   // Clear and prepare canvas
   canvasCtx.save();
@@ -212,6 +222,9 @@ holistic.onResults((results) => {
   // Draw ESC = Quit status
   canvasCtx.fillStyle = 'rgb(0, 255, 255)';
   canvasCtx.fillText('ESC = Quit', 20, 110);
+
+  // Draw FPS Status
+  canvasCtx.fillText(`FPS: ${fps}`, 20, 145);
 });
 
 // Setup Keyboard Listeners (Replicating desktop tracking control shortcuts)
@@ -272,6 +285,8 @@ async function startTracking() {
 // Stop tracking & cleanup
 function stopTracking() {
   isLoaded = false;
+  lastFrameTime = 0;
+  fps = 0;
   clearInterval(progressInterval);
 
   if (camera) {
