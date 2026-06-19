@@ -216,12 +216,12 @@ function isConvex(pts) {
     const p1 = pts[i];
     const p2 = pts[(i + 1) % n];
     const p3 = pts[(i + 2) % n];
-    const dx1 = p2.x - p1.x;
-    const dy1 = p2.y - p1.y;
-    const dx2 = p3.x - p2.x;
-    const dy2 = p3.y - p2.y;
+    const dx1 = p2[0] - p1[0];
+    const dy1 = p2[1] - p1[1];
+    const dx2 = p3[0] - p2[0];
+    const dy2 = p3[1] - p2[1];
     const cross = dx1 * dy2 - dy1 * dx2;
-    if (cross !== 0) {
+    if (Math.abs(cross) > 10.0) {
       const currentSign = cross > 0 ? 1 : -1;
       if (sign === 0) {
         sign = currentSign;
@@ -247,12 +247,10 @@ function loadPreset6Media(source, isFile = false) {
   } else {
     preset6PreviewContainer.innerHTML = `
       <video id="preset6-preview-video" controls autoplay loop style="width: 100%; height: 100%; object-fit: contain;">
-        <source src="${mediaUrl}">
       </video>
     `;
     preset6OverlayContainer.innerHTML = `
       <video id="preset6-overlay-video" muted autoplay loop playsinline style="position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; pointer-events: none;">
-        <source src="${mediaUrl}">
       </video>
     `;
 
@@ -260,6 +258,11 @@ function loadPreset6Media(source, isFile = false) {
     const overlayVideo = document.getElementById('preset6-overlay-video');
 
     if (previewVideo && overlayVideo) {
+      previewVideo.src = mediaUrl;
+      overlayVideo.src = mediaUrl;
+      previewVideo.load();
+      overlayVideo.load();
+
       previewVideo.addEventListener('play', () => overlayVideo.play());
       previewVideo.addEventListener('pause', () => overlayVideo.pause());
       previewVideo.addEventListener('seeking', () => {
@@ -1005,7 +1008,7 @@ async function renderLoop(nowMs) {
       const src = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
       const dst = [[pt2.x, pt2.y], [pt3.x, pt3.y], [pt4.x, pt4.y], [pt1.x, pt1.y]];
       
-      if (isConvex(dst.map(p => ({ x: p[0], y: p[1] })))) {
+      if (isConvex(dst)) {
         try {
           const matrix = getHomographyMatrix(src, dst);
           playerEl.style.transform = `matrix3d(${matrix.join(',')})`;

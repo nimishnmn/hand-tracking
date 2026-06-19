@@ -19,7 +19,7 @@ def is_convex(pts):
         dx2 = p3[0] - p2[0]
         dy2 = p3[1] - p2[1]
         cross = dx1 * dy2 - dy1 * dx2
-        if cross != 0:
+        if abs(cross) > 10.0:
             current_sign = 1 if cross > 0 else -1
             if sign == 0:
                 sign = current_sign
