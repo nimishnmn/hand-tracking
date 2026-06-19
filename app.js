@@ -260,18 +260,20 @@ async function renderLoop(nowMs) {
     trailCtx.fillRect(0, 0, w, h);
   }
 
-  canvasCtx.save();
+  // 1. Reset transform to identity and clear screen
+  canvasCtx.setTransform(1, 0, 0, 1, 0, 0);
   canvasCtx.clearRect(0, 0, w, h);
 
-  // 1. Mirror / Flip transformation if active
-  if (options.flipH || options.flipV) {
-    canvasCtx.save();
-    const sX = options.flipH ? -1 : 1;
-    const sY = options.flipV ? -1 : 1;
-    const tX = options.flipH ? -w : 0;
-    const tY = options.flipV ? -h : 0;
-    canvasCtx.scale(sX, sY);
-    canvasCtx.translate(tX, tY);
+  // 2. Save clean state and apply flip transformations for video and landmarks
+  canvasCtx.save();
+
+  if (options.flipH) {
+    canvasCtx.translate(w, 0);
+    canvasCtx.scale(-1, 1);
+  }
+  if (options.flipV) {
+    canvasCtx.translate(0, h);
+    canvasCtx.scale(1, -1);
   }
 
   // Calculate FPS
@@ -458,9 +460,6 @@ async function renderLoop(nowMs) {
     const lh = results.leftHandLandmarks;
     const rh = results.rightHandLandmarks;
 
-    // Copy current video frame to offscreen canvas for pixel sampling
-    offCtx.drawImage(results.image, 0, 0, w, h);
-
     // Define finger pairs: [leftIdx1, leftIdx2, rightIdx1, rightIdx2, filterName]
     const fingerPairs = [
       [4, 8, 4, 8, 'invert'],
@@ -470,6 +469,9 @@ async function renderLoop(nowMs) {
     ];
 
     for (const [li1, li2, ri1, ri2, filterName] of fingerPairs) {
+      // Copy current video frame to offscreen canvas for pixel sampling
+      offCtx.drawImage(results.image, 0, 0, w, h);
+
       const pts = [
         { x: lh[li1].x * w, y: lh[li1].y * h },
         { x: lh[li2].x * w, y: lh[li2].y * h },
@@ -655,13 +657,9 @@ async function renderLoop(nowMs) {
     canvasCtx.restore();
   }
 
-  if (options.flipH || options.flipV) {
-    canvasCtx.restore(); // Restore flip scale/translate
-  }
+  canvasCtx.restore(); // Restore flip scale/translate, returning context to clean screen-space
 
-  canvasCtx.restore(); // Restore base clearRect context
-
-  // 2. Draw HUD Skeletons Status (Exactly replicating CV2 putText colors & positions)
+  // 3. Draw HUD Skeletons Status (Exactly replicating CV2 putText colors & positions)
   canvasCtx.font = 'bold 20px monospace';
   
   // Draw ESC = Quit status
