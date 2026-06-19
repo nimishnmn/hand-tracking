@@ -225,3 +225,12 @@ video {
     font-size: 13px;
   }
 }
+
+#btn-outline {
+  position: fixed;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  z-index: 100;
+}

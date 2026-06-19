@@ -322,13 +322,14 @@ with mp_holistic.Holistic(
             text_col = (0, 0, 0) if active_preset == pi else (255, 255, 255)
             cv2.putText(frame, str(pi), (box_x + 13, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_col, 2)
 
-        # Draw Outline Toggle Box (O)
-        box_x = start_x + 5 * 50
-        color_box = (0, 255, 0) if show_outline else (100, 100, 100)
-        thick_box = -1 if show_outline else 2
-        cv2.rectangle(frame, (box_x, 20), (box_x + 40, 60), color_box, thick_box)
-        text_col = (0, 0, 0) if show_outline else (255, 255, 255)
-        cv2.putText(frame, "O", (box_x + 13, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_col, 2)
+        # Draw Outline Toggle Box (O) only when Preset 3 is active
+        if active_preset == 3:
+            box_x = start_x + 5 * 50
+            color_box = (0, 255, 0) if show_outline else (100, 100, 100)
+            thick_box = -1 if show_outline else 2
+            cv2.rectangle(frame, (box_x, 20), (box_x + 40, 60), color_box, thick_box)
+            text_col = (0, 0, 0) if show_outline else (255, 255, 255)
+            cv2.putText(frame, "O", (box_x + 13, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_col, 2)
 
         # Show frame
         cv2.imshow("MediaPipe Holistic Tracking", frame)
@@ -345,7 +346,7 @@ with mp_holistic.Holistic(
             show_hands = not show_hands
             print(f"Hands: {'ON' if show_hands else 'OFF'}")
 
-        elif key == ord('o'):
+        elif key == ord('o') and active_preset == 3:
             show_outline = not show_outline
             print(f"Outline: {'ON' if show_outline else 'OFF'}")
 

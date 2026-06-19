@@ -140,6 +140,13 @@ function updatePresetHighlights() {
   btnPreset4.classList.toggle('active', options.activePreset === 4);
   btnPreset5.classList.toggle('active', options.activePreset === 5);
   btnOutline.classList.toggle('active', options.showOutline);
+
+  // Show outline toggle only when Preset 3 is active and tracking is active
+  if (activeStream && options.activePreset === 3) {
+    btnOutline.style.display = 'block';
+  } else {
+    btnOutline.style.display = 'none';
+  }
 }
 
 // Initialize DOM and Event Listeners after document loads
@@ -724,7 +731,7 @@ document.addEventListener('keydown', (event) => {
     options.activePreset = 5;
     updatePresetHighlights();
     console.log('Preset 5 activated');
-  } else if (key === 'o') {
+  } else if (key === 'o' && options.activePreset === 3) {
     options.showOutline = !options.showOutline;
     updatePresetHighlights();
     console.log(`Outline: ${options.showOutline ? 'ON' : 'OFF'}`);
@@ -861,6 +868,7 @@ function stopTracking() {
   loadingContainer.style.display = 'none';
   controlBar.style.display = 'none';
   presetSelector.style.display = 'none';
+  btnOutline.style.display = 'none';
   startCameraBtn.style.display = 'block';
 
   if (handLandmarker) {
