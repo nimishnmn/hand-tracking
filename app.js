@@ -234,25 +234,12 @@ holistic.onResults((results) => {
   // 2. Draw HUD Skeletons Status (Exactly replicating CV2 putText colors & positions)
   canvasCtx.font = 'bold 20px monospace';
   
-  // Draw Pose Status
-  canvasCtx.fillStyle = 'rgb(0, 255, 0)';
-  canvasCtx.fillText(`Pose [P]: ${options.showPose ? 'ON' : 'OFF'}`, 20, 40);
-
-  // Draw Hands Status
-  canvasCtx.fillText(`Hands [H]: ${options.showHands ? 'ON' : 'OFF'}`, 20, 75);
-
-  // Draw Flip H Status
-  canvasCtx.fillText(`Flip H [X]: ${options.flipH ? 'ON' : 'OFF'}`, 20, 110);
-
-  // Draw Flip V Status
-  canvasCtx.fillText(`Flip V [Y]: ${options.flipV ? 'ON' : 'OFF'}`, 20, 145);
-
   // Draw ESC = Quit status
   canvasCtx.fillStyle = 'rgb(0, 255, 255)';
-  canvasCtx.fillText('ESC = Quit', 20, 180);
+  canvasCtx.fillText('ESC = Quit', 20, 40);
 
   // Draw FPS Status
-  canvasCtx.fillText(`FPS: ${fps}`, 20, 215);
+  canvasCtx.fillText(`FPS: ${fps}`, 20, 75);
 });
 
 // Setup Keyboard Listeners (Replicating desktop tracking control shortcuts)

@@ -127,48 +127,8 @@ with mp_holistic.Holistic(
         # -------------------------
         cv2.putText(
             frame,
-            f"Pose [P]: {'ON' if show_pose else 'OFF'}",
-            (20, 40),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2
-        )
-
-        cv2.putText(
-            frame,
-            f"Hands [H]: {'ON' if show_hands else 'OFF'}",
-            (20, 75),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2
-        )
-
-        cv2.putText(
-            frame,
-            f"Flip H [X]: {'ON' if flip_h else 'OFF'}",
-            (20, 110),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2
-        )
-
-        cv2.putText(
-            frame,
-            f"Flip V [Y]: {'ON' if flip_v else 'OFF'}",
-            (20, 145),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2
-        )
-
-        cv2.putText(
-            frame,
             "ESC = Quit",
-            (20, 180),
+            (20, 40),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (0, 255, 255),
@@ -178,7 +138,7 @@ with mp_holistic.Holistic(
         cv2.putText(
             frame,
             f"FPS: {fps}",
-            (20, 215),
+            (20, 75),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (0, 255, 255),
