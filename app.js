@@ -289,7 +289,7 @@ async function renderLoop(nowMs) {
   if (videoElement.currentTime > 0) {
     let ts = performance.now();
     
-    if (options.showHands) {
+    if (handLandmarker) {
       if (ts <= lastHandTimestamp) ts = lastHandTimestamp + 1;
       lastHandTimestamp = ts;
       handResult = handLandmarker.detectForVideo(videoElement, ts);
