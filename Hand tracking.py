@@ -29,6 +29,7 @@ show_hands = False
 flip_h = False
 flip_v = False
 active_preset = 1
+show_outline = False
 
 # -------------------------
 # Main Loop
@@ -52,6 +53,8 @@ with mp_holistic.Holistic(
         if not success:
             print("Failed to read webcam.")
             break
+        
+        h, w, _ = frame.shape
 
         # Mirror / Flip image
         if flip_h and flip_v:
@@ -71,17 +74,11 @@ with mp_holistic.Holistic(
         if active_preset == 2:
             frame = (frame * 0.25).astype(np.uint8)
 
-        # Preset 3: Dim background by 40%
-        if active_preset == 3:
-            frame = (frame * 0.60).astype(np.uint8)
-
-        # Preset 4: Dim background by 85%
+        # Preset 4: Fade the trail buffer
         if active_preset == 4:
             if trail_buffer is None or trail_buffer.shape != frame.shape:
                 trail_buffer = np.zeros_like(frame)
-            # Fade the trail buffer
             trail_buffer = (trail_buffer * 0.85).astype(np.uint8)
-            frame = (frame * 0.15).astype(np.uint8)
 
         # Preset 5: Full black background
         if active_preset == 5:
@@ -147,8 +144,7 @@ with mp_holistic.Holistic(
             # Draw solid white border outline
             cv2.polylines(frame, [pts], isClosed=True, color=(255, 255, 255), thickness=2)
 
-        # -------------------------
-        # Preset 2: Glow Mesh (Connect H1 all points to H2 all points, color reactive & glow)
+        # Preset 2: Glow Mesh (Connect H1 fingertips to H2 fingertips, color reactive & glow)
         # -------------------------
         if active_preset == 2 and results.left_hand_landmarks and results.right_hand_landmarks:
             h, w, _ = frame.shape
@@ -156,9 +152,10 @@ with mp_holistic.Holistic(
             rh = results.right_hand_landmarks.landmark
             overlay = frame.copy()
             
-            for i in range(21):
+            tips = [4, 8, 12, 16, 20]
+            for i in tips:
                 pt1 = (int(lh[i].x * w), int(lh[i].y * h))
-                for j in range(21):
+                for j in tips:
                     pt2 = (int(rh[j].x * w), int(rh[j].y * h))
                     
                     # Calculate distance
@@ -172,10 +169,13 @@ with mp_holistic.Holistic(
                     g = int(255 * (1.0 - ratio))
                     r = int(255 * ratio)
                     
-                    cv2.line(overlay, pt1, pt2, (b, g, r), 1)
+                    # 1. Thicker outer glow line
+                    cv2.line(overlay, pt1, pt2, (b, g, r), 4)
+                    # 2. Thinner inner core line
+                    cv2.line(overlay, pt1, pt2, (255, 255, 255), 1)
             
             # Blend overlay to achieve semi-transparent glow lines
-            cv2.addWeighted(overlay, 0.35, frame, 0.65, 0, frame)
+            cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
 
         # -------------------------
         # Preset 3: Finger Portal Filters
@@ -224,6 +224,8 @@ with mp_holistic.Holistic(
 
                 mask_3ch = cv2.merge([mask, mask, mask])
                 frame = np.where(mask_3ch == 255, filtered, frame)
+                if show_outline:
+                    cv2.polylines(frame, [pts], True, (255, 255, 255), 2)
 
         # -------------------------
         # Preset 4: Ghost Trails
@@ -302,7 +304,7 @@ with mp_holistic.Holistic(
         # -------------------------
         cv2.putText(
             frame,
-            "ESC = Quit",
+            f"FPS: {fps}",
             (20, 40),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
@@ -310,24 +312,23 @@ with mp_holistic.Holistic(
             2
         )
 
-        cv2.putText(
-            frame,
-            f"FPS: {fps}",
-            (20, 75),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 255),
-            2
-        )
-
         # Draw top-right presets HUD
+        start_x = w - 320
         for pi in range(1, 6):
-            box_x = 1080 + (pi - 1) * 50
+            box_x = start_x + (pi - 1) * 50
             color_box = (0, 255, 0) if active_preset == pi else (100, 100, 100)
             thick_box = -1 if active_preset == pi else 2
             cv2.rectangle(frame, (box_x, 20), (box_x + 40, 60), color_box, thick_box)
             text_col = (0, 0, 0) if active_preset == pi else (255, 255, 255)
             cv2.putText(frame, str(pi), (box_x + 13, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_col, 2)
+
+        # Draw Outline Toggle Box (O)
+        box_x = start_x + 5 * 50
+        color_box = (0, 255, 0) if show_outline else (100, 100, 100)
+        thick_box = -1 if show_outline else 2
+        cv2.rectangle(frame, (box_x, 20), (box_x + 40, 60), color_box, thick_box)
+        text_col = (0, 0, 0) if show_outline else (255, 255, 255)
+        cv2.putText(frame, "O", (box_x + 13, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_col, 2)
 
         # Show frame
         cv2.imshow("MediaPipe Holistic Tracking", frame)
@@ -343,6 +344,10 @@ with mp_holistic.Holistic(
         elif key == ord('h'):
             show_hands = not show_hands
             print(f"Hands: {'ON' if show_hands else 'OFF'}")
+
+        elif key == ord('o'):
+            show_outline = not show_outline
+            print(f"Outline: {'ON' if show_outline else 'OFF'}")
 
         elif key == ord('p'):
             show_pose = not show_pose

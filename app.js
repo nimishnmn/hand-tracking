@@ -92,6 +92,7 @@ let btnPreset2;
 let btnPreset3;
 let btnPreset4;
 let btnPreset5;
+let btnOutline;
 
 // Offscreen canvas for pixel manipulation (Preset 3)
 let offscreenCanvas;
@@ -117,6 +118,7 @@ const options = {
   showPose: false,
   showHands: false,
   showCornerpin: true, // Always active
+  showOutline: false,
   flipH: false,
   flipV: false,
   activePreset: 1
@@ -137,6 +139,7 @@ function updatePresetHighlights() {
   btnPreset3.classList.toggle('active', options.activePreset === 3);
   btnPreset4.classList.toggle('active', options.activePreset === 4);
   btnPreset5.classList.toggle('active', options.activePreset === 5);
+  btnOutline.classList.toggle('active', options.showOutline);
 }
 
 // Initialize DOM and Event Listeners after document loads
@@ -165,6 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnPreset3 = document.getElementById('preset-3');
   btnPreset4 = document.getElementById('preset-4');
   btnPreset5 = document.getElementById('preset-5');
+  btnOutline = document.getElementById('btn-outline');
 
   // Offscreen canvas for pixel manipulation (Preset 3)
   offscreenCanvas = document.createElement('canvas');
@@ -209,6 +213,12 @@ document.addEventListener('DOMContentLoaded', () => {
     options.activePreset = 5;
     updatePresetHighlights();
     console.log('Preset 5 activated');
+  });
+
+  btnOutline.addEventListener('click', () => {
+    options.showOutline = !options.showOutline;
+    updatePresetHighlights();
+    console.log(`Outline: ${options.showOutline ? 'ON' : 'OFF'}`);
   });
 
   // Attach tap/click events to on-screen control buttons
@@ -334,17 +344,7 @@ async function renderLoop(nowMs) {
     canvasCtx.fillRect(0, 0, w, h);
   }
 
-  // Preset 3: Dim background by 40%
-  if (options.activePreset === 3) {
-    canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.40)';
-    canvasCtx.fillRect(0, 0, w, h);
-  }
 
-  // Preset 4: Dim background by 85%
-  if (options.activePreset === 4) {
-    canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-    canvasCtx.fillRect(0, 0, w, h);
-  }
 
   // Preset 5: Full black background
   if (options.activePreset === 5) {
@@ -426,13 +426,13 @@ async function renderLoop(nowMs) {
 
     canvasCtx.save();
     canvasCtx.globalCompositeOperation = 'lighter';
-    canvasCtx.lineWidth = 1;
 
     const maxDiag = Math.sqrt(w * w + h * h);
+    const tips = [4, 8, 12, 16, 20];
 
-    for (let i = 0; i < 21; i++) {
+    for (const i of tips) {
       const pt1 = { x: lh[i].x * w, y: lh[i].y * h };
-      for (let j = 0; j < 21; j++) {
+      for (const j of tips) {
         const pt2 = { x: rh[j].x * w, y: rh[j].y * h };
 
         const dx = pt1.x - pt2.x;
@@ -443,9 +443,17 @@ async function renderLoop(nowMs) {
         const ratio = Math.min(dist / (maxDiag * 0.65), 1.0);
         const hue = 180 + ratio * 140;
 
-        // Drawing glow line (highly transparent, slightly wider)
-        canvasCtx.strokeStyle = `hsla(${hue}, 100%, 55%, 0.15)`;
-        
+        // 1. Thicker outer glow line
+        canvasCtx.lineWidth = 4;
+        canvasCtx.strokeStyle = `hsla(${hue}, 100%, 55%, 0.3)`;
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(pt1.x, pt1.y);
+        canvasCtx.lineTo(pt2.x, pt2.y);
+        canvasCtx.stroke();
+
+        // 2. Thinner inner core line
+        canvasCtx.lineWidth = 1.5;
+        canvasCtx.strokeStyle = `hsla(${hue}, 100%, 85%, 0.8)`;
         canvasCtx.beginPath();
         canvasCtx.moveTo(pt1.x, pt1.y);
         canvasCtx.lineTo(pt2.x, pt2.y);
@@ -544,6 +552,18 @@ async function renderLoop(nowMs) {
       canvasCtx.clip();
       canvasCtx.drawImage(offscreenCanvas, 0, 0, w, h);
       canvasCtx.restore();
+
+      if (options.showOutline) {
+        canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+        canvasCtx.lineWidth = 2;
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(pts[0].x, pts[0].y);
+        canvasCtx.lineTo(pts[1].x, pts[1].y);
+        canvasCtx.lineTo(pts[2].x, pts[2].y);
+        canvasCtx.lineTo(pts[3].x, pts[3].y);
+        canvasCtx.closePath();
+        canvasCtx.stroke();
+      }
     }
   }
 
@@ -652,12 +672,9 @@ async function renderLoop(nowMs) {
   // 3. Draw HUD Skeletons Status (Exactly replicating CV2 putText colors & positions)
   canvasCtx.font = 'bold 20px monospace';
   
-  // Draw ESC = Quit status
-  canvasCtx.fillStyle = 'rgb(0, 255, 255)';
-  canvasCtx.fillText('ESC = Quit', 20, 40);
-
   // Draw FPS Status
-  canvasCtx.fillText(`FPS: ${fps}`, 20, 75);
+  canvasCtx.fillStyle = 'rgb(0, 255, 255)';
+  canvasCtx.fillText(`FPS: ${fps}`, 20, 40);
 
   reqFrameId = requestAnimationFrame(renderLoop);
 }
@@ -707,6 +724,10 @@ document.addEventListener('keydown', (event) => {
     options.activePreset = 5;
     updatePresetHighlights();
     console.log('Preset 5 activated');
+  } else if (key === 'o') {
+    options.showOutline = !options.showOutline;
+    updatePresetHighlights();
+    console.log(`Outline: ${options.showOutline ? 'ON' : 'OFF'}`);
   }
 });
 
