@@ -4,13 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Holistic Vision Tracker</title>
-  <meta name="description" content="Minimalist web-based hand tracking using MediaPipe Holistic.">
+  <meta name="description" content="Minimalist web-based hand tracking using MediaPipe Tasks Vision API.">
   <link rel="stylesheet" href="styles.css">
-  
-  <!-- MediaPipe Dependencies -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
 </head>
 <body>
 
@@ -49,8 +44,9 @@
   </div>
 
   <!-- Hidden video stream input -->
-  <video id="webcam" width="1280" height="720" autoplay playsinline></video>
+  <video id="webcam" width="1280" height="720" autoplay playsinline muted style="display:none"></video>
 
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

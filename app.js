@@ -1,48 +1,114 @@
+// Global variables for MediaPipe Tasks Vision API
+let FilesetResolver = window.FilesetResolver;
+let HandLandmarker = window.HandLandmarker;
+let PoseLandmarker = window.PoseLandmarker;
+
+// MediaPipe Constants
+const HAND_CONNECTIONS = [
+  [0, 1], [1, 2], [2, 3], [3, 4],
+  [0, 5], [5, 6], [6, 7], [7, 8],
+  [5, 9], [9, 10], [10, 11], [11, 12],
+  [9, 13], [13, 14], [14, 15], [15, 16],
+  [13, 17], [17, 18], [18, 19], [19, 20],
+  [0, 17]
+];
+
+const POSE_CONNECTIONS = [
+  [0, 1], [1, 2], [2, 3], [3, 7],
+  [0, 4], [4, 5], [5, 6], [6, 8],
+  [9, 10],
+  [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19],
+  [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
+  [11, 23], [12, 24], [23, 24],
+  [23, 25], [24, 26], [25, 27], [26, 28], [27, 29], [28, 30],
+  [29, 31], [30, 32], [27, 31], [28, 32]
+];
+
+// Drawing Utilities
+function drawLandmarks(ctx, landmarks, style) {
+  if (!landmarks) return;
+  const color = style?.color || 'white';
+  const radius = style?.radius || 4;
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  
+  ctx.save();
+  ctx.fillStyle = color;
+  for (let i = 0; i < landmarks.length; i++) {
+    const lm = landmarks[i];
+    if (!lm || (lm.visibility !== undefined && lm.visibility < 0.5)) continue;
+    ctx.beginPath();
+    ctx.arc(lm.x * w, lm.y * h, radius, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawConnectors(ctx, landmarks, connections, style) {
+  if (!landmarks || !connections) return;
+  const color = style?.color || 'white';
+  const lineWidth = style?.lineWidth || 1;
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  for (let i = 0; i < connections.length; i++) {
+    const [startIdx, endIdx] = connections[i];
+    const startLm = landmarks[startIdx];
+    const endLm = landmarks[endIdx];
+    if (!startLm || (startLm.visibility !== undefined && startLm.visibility < 0.5)) continue;
+    if (!endLm || (endLm.visibility !== undefined && endLm.visibility < 0.5)) continue;
+    ctx.moveTo(startLm.x * w, startLm.y * h);
+    ctx.lineTo(endLm.x * w, endLm.y * h);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 // DOM Elements
-const videoElement = document.getElementById('webcam');
-const canvasElement = document.getElementById('output-canvas');
-const canvasCtx = canvasElement.getContext('2d');
-const startCameraBtn = document.getElementById('start-camera-btn');
-const loadingContainer = document.getElementById('loading-container');
-const loadingText = document.getElementById('loading-text');
-const progressBarFill = document.getElementById('progress-bar-fill');
+let videoElement;
+let canvasElement;
+let canvasCtx;
+let startCameraBtn;
+let loadingContainer;
+let loadingText;
+let progressBarFill;
 
 // Mobile Control Bar Elements
-const controlBar = document.getElementById('control-bar');
-const btnPose = document.getElementById('btn-pose');
-const btnHands = document.getElementById('btn-hands');
-const btnFlipH = document.getElementById('btn-fliph');
-const btnFlipV = document.getElementById('btn-flipv');
-const btnQuit = document.getElementById('btn-quit');
+let controlBar;
+let btnPose;
+let btnHands;
+let btnFlipH;
+let btnFlipV;
+let btnQuit;
 
 // Preset Selector Elements
-const presetSelector = document.getElementById('preset-selector');
-const btnPreset1 = document.getElementById('preset-1');
-const btnPreset2 = document.getElementById('preset-2');
-const btnPreset3 = document.getElementById('preset-3');
-const btnPreset4 = document.getElementById('preset-4');
-const btnPreset5 = document.getElementById('preset-5');
+let presetSelector;
+let btnPreset1;
+let btnPreset2;
+let btnPreset3;
+let btnPreset4;
+let btnPreset5;
 
 // Offscreen canvas for pixel manipulation (Preset 3)
-const offscreenCanvas = document.createElement('canvas');
-offscreenCanvas.width = 1280;
-offscreenCanvas.height = 720;
-const offCtx = offscreenCanvas.getContext('2d');
+let offscreenCanvas;
+let offCtx;
 
 // Trail canvas for persistent frame buffer (Preset 4)
-const trailCanvas = document.createElement('canvas');
-trailCanvas.width = 1280;
-trailCanvas.height = 720;
-const trailCtx = trailCanvas.getContext('2d');
-trailCtx.fillStyle = '#000000';
-trailCtx.fillRect(0, 0, 1280, 720);
+let trailCanvas;
+let trailCtx;
 
 // Global States
 let activeStream = null;
-let camera = null;
-let progressVal = 0;
-let progressInterval = null;
-let isLoaded = false;
+let handLandmarker = null;
+let poseLandmarker = null;
+let reqFrameId = null;
+let loadingAnimation = null;
+let lastHandTimestamp = -1;
+let lastPoseTimestamp = -1;
 let lastFrameTime = 0;
 let fps = 0;
 
@@ -73,134 +139,117 @@ function updatePresetHighlights() {
   btnPreset5.classList.toggle('active', options.activePreset === 5);
 }
 
-// Preset buttons click listeners
-btnPreset1.addEventListener('click', () => {
-  options.activePreset = 1;
-  updatePresetHighlights();
-  console.log('Preset 1 activated');
-});
+// Initialize DOM and Event Listeners after document loads
+document.addEventListener('DOMContentLoaded', () => {
+  // DOM Elements
+  videoElement = document.getElementById('webcam');
+  canvasElement = document.getElementById('output-canvas');
+  canvasCtx = canvasElement.getContext('2d');
+  startCameraBtn = document.getElementById('start-camera-btn');
+  loadingContainer = document.getElementById('loading-container');
+  loadingText = document.getElementById('loading-text');
+  progressBarFill = document.getElementById('progress-bar-fill');
 
-btnPreset2.addEventListener('click', () => {
-  options.activePreset = 2;
-  updatePresetHighlights();
-  console.log('Preset 2 activated');
-});
+  // Mobile Control Bar Elements
+  controlBar = document.getElementById('control-bar');
+  btnPose = document.getElementById('btn-pose');
+  btnHands = document.getElementById('btn-hands');
+  btnFlipH = document.getElementById('btn-fliph');
+  btnFlipV = document.getElementById('btn-flipv');
+  btnQuit = document.getElementById('btn-quit');
 
-btnPreset3.addEventListener('click', () => {
-  options.activePreset = 3;
-  updatePresetHighlights();
-  console.log('Preset 3 activated');
-});
+  // Preset Selector Elements
+  presetSelector = document.getElementById('preset-selector');
+  btnPreset1 = document.getElementById('preset-1');
+  btnPreset2 = document.getElementById('preset-2');
+  btnPreset3 = document.getElementById('preset-3');
+  btnPreset4 = document.getElementById('preset-4');
+  btnPreset5 = document.getElementById('preset-5');
 
-btnPreset4.addEventListener('click', () => {
-  options.activePreset = 4;
-  updatePresetHighlights();
-  console.log('Preset 4 activated');
-});
+  // Offscreen canvas for pixel manipulation (Preset 3)
+  offscreenCanvas = document.createElement('canvas');
+  offscreenCanvas.width = 1280;
+  offscreenCanvas.height = 720;
+  offCtx = offscreenCanvas.getContext('2d');
 
-btnPreset5.addEventListener('click', () => {
-  options.activePreset = 5;
-  updatePresetHighlights();
-  console.log('Preset 5 activated');
-});
+  // Trail canvas for persistent frame buffer (Preset 4)
+  trailCanvas = document.createElement('canvas');
+  trailCanvas.width = 1280;
+  trailCanvas.height = 720;
+  trailCtx = trailCanvas.getContext('2d');
+  trailCtx.fillStyle = '#000000';
+  trailCtx.fillRect(0, 0, 1280, 720);
 
-// Attach tap/click events to on-screen control buttons
-
-btnPose.addEventListener('click', () => {
-  options.showPose = !options.showPose;
-  updateButtonHighlights();
-  console.log(`Pose: ${options.showPose ? 'ON' : 'OFF'}`);
-});
-
-btnHands.addEventListener('click', () => {
-  options.showHands = !options.showHands;
-  updateButtonHighlights();
-  console.log(`Hands: ${options.showHands ? 'ON' : 'OFF'}`);
-});
-
-btnFlipH.addEventListener('click', () => {
-  options.flipH = !options.flipH;
-  updateButtonHighlights();
-  console.log(`Flip H: ${options.flipH ? 'ON' : 'OFF'}`);
-});
-
-btnFlipV.addEventListener('click', () => {
-  options.flipV = !options.flipV;
-  updateButtonHighlights();
-  console.log(`Flip V: ${options.flipV ? 'ON' : 'OFF'}`);
-});
-
-btnQuit.addEventListener('click', () => {
-  stopTracking();
-});
-
-// Progress bar simulator
-function startLoadingProgress() {
-  clearInterval(progressInterval);
-  progressVal = 0;
-  updateProgress(0);
-  
-  // Progress up to 20% quickly on camera start request
-  progressVal = 20;
-  updateProgress(progressVal);
-
-  progressInterval = setInterval(() => {
-    if (progressVal < 90) {
-      // Simulate steady load
-      progressVal += Math.floor(Math.random() * 8) + 2;
-      if (progressVal > 90) progressVal = 90;
-      updateProgress(progressVal);
-    }
-  }, 100);
-}
-
-function updateProgress(value) {
-  progressBarFill.style.width = `${value}%`;
-  loadingText.textContent = `Loading: ${value}%`;
-}
-
-function finishLoadingProgress() {
-  clearInterval(progressInterval);
-  updateProgress(100);
-  setTimeout(() => {
-    loadingContainer.style.display = 'none';
-    canvasElement.style.display = 'block';
-    // Show flat on-screen buttons bar & highlight defaults
-    controlBar.style.display = 'flex';
-    presetSelector.style.display = 'flex';
-    updateButtonHighlights();
+  // Preset buttons click listeners
+  btnPreset1.addEventListener('click', () => {
+    options.activePreset = 1;
     updatePresetHighlights();
-  }, 350);
-}
+    console.log('Preset 1 activated');
+  });
 
-// MediaPipe Holistic Setup
-const holistic = new Holistic({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`
+  btnPreset2.addEventListener('click', () => {
+    options.activePreset = 2;
+    updatePresetHighlights();
+    console.log('Preset 2 activated');
+  });
+
+  btnPreset3.addEventListener('click', () => {
+    options.activePreset = 3;
+    updatePresetHighlights();
+    console.log('Preset 3 activated');
+  });
+
+  btnPreset4.addEventListener('click', () => {
+    options.activePreset = 4;
+    updatePresetHighlights();
+    console.log('Preset 4 activated');
+  });
+
+  btnPreset5.addEventListener('click', () => {
+    options.activePreset = 5;
+    updatePresetHighlights();
+    console.log('Preset 5 activated');
+  });
+
+  // Attach tap/click events to on-screen control buttons
+  btnPose.addEventListener('click', () => {
+    options.showPose = !options.showPose;
+    updateButtonHighlights();
+    console.log(`Pose: ${options.showPose ? 'ON' : 'OFF'}`);
+  });
+
+  btnHands.addEventListener('click', () => {
+    options.showHands = !options.showHands;
+    updateButtonHighlights();
+    console.log(`Hands: ${options.showHands ? 'ON' : 'OFF'}`);
+  });
+
+  btnFlipH.addEventListener('click', () => {
+    options.flipH = !options.flipH;
+    updateButtonHighlights();
+    console.log(`Flip H: ${options.flipH ? 'ON' : 'OFF'}`);
+  });
+
+  btnFlipV.addEventListener('click', () => {
+    options.flipV = !options.flipV;
+    updateButtonHighlights();
+    console.log(`Flip V: ${options.flipV ? 'ON' : 'OFF'}`);
+  });
+
+  btnQuit.addEventListener('click', () => {
+    stopTracking();
+  });
+
+  startCameraBtn.addEventListener('click', startTracking);
 });
 
-holistic.setOptions({
-  modelComplexity: 1,
-  smoothLandmarks: true,
-  enableSegmentation: false,
-  refineFaceLandmarks: false,
-  minDetectionConfidence: 0.5,
-  minTrackingConfidence: 0.5
-});
-
-// Holistic OnResults
-holistic.onResults((results) => {
-  if (!isLoaded) {
-    isLoaded = true;
-    finishLoadingProgress();
+async function renderLoop(nowMs) {
+  if (!handLandmarker || !poseLandmarker) {
+    reqFrameId = requestAnimationFrame(renderLoop);
+    return;
   }
 
-  // Calculate FPS
-  const now = performance.now();
-  if (lastFrameTime > 0) {
-    const delta = (now - lastFrameTime) / 1000;
-    fps = Math.round(1 / delta);
-  }
-  lastFrameTime = now;
+  console.log('frame, video ready state:', videoElement.readyState);
 
   const w = canvasElement.width;
   const h = canvasElement.height;
@@ -211,19 +260,67 @@ holistic.onResults((results) => {
     trailCtx.fillRect(0, 0, w, h);
   }
 
-  // Clear and prepare canvas
   canvasCtx.save();
   canvasCtx.clearRect(0, 0, w, h);
 
   // 1. Mirror / Flip transformation if active
   if (options.flipH || options.flipV) {
-    const tX = options.flipH ? w : 0;
-    const tY = options.flipV ? h : 0;
+    canvasCtx.save();
     const sX = options.flipH ? -1 : 1;
     const sY = options.flipV ? -1 : 1;
-    
-    canvasCtx.translate(tX, tY);
+    const tX = options.flipH ? -w : 0;
+    const tY = options.flipV ? -h : 0;
     canvasCtx.scale(sX, sY);
+    canvasCtx.translate(tX, tY);
+  }
+
+  // Calculate FPS
+  if (lastFrameTime > 0) {
+    const delta = (nowMs - lastFrameTime) / 1000;
+    fps = Math.round(1 / delta);
+  }
+  lastFrameTime = nowMs;
+
+  let handResult = null;
+  let poseResult = null;
+  
+  if (videoElement.currentTime > 0) {
+    let ts = performance.now();
+    
+    if (options.showHands) {
+      if (ts <= lastHandTimestamp) ts = lastHandTimestamp + 1;
+      lastHandTimestamp = ts;
+      handResult = handLandmarker.detectForVideo(videoElement, ts);
+    }
+    
+    if (options.showPose) {
+      let pts = performance.now();
+      if (pts <= lastPoseTimestamp) pts = lastPoseTimestamp + 1;
+      lastPoseTimestamp = pts;
+      poseResult = poseLandmarker.detectForVideo(videoElement, pts);
+    }
+  }
+
+  const results = {
+    image: videoElement,
+    poseLandmarks: null,
+    leftHandLandmarks: null,
+    rightHandLandmarks: null
+  };
+  
+  if (poseResult && poseResult.landmarks && poseResult.landmarks.length > 0) {
+    results.poseLandmarks = poseResult.landmarks[0];
+  }
+  
+  if (handResult && handResult.landmarks && handResult.landmarks.length > 0) {
+    for (let i = 0; i < handResult.landmarks.length; i++) {
+      const handedness = handResult.handednesses[i][0].categoryName; 
+      if (handedness === 'Left') {
+        results.leftHandLandmarks = handResult.landmarks[i];
+      } else {
+        results.rightHandLandmarks = handResult.landmarks[i];
+      }
+    }
   }
 
   // Draw base video frame
@@ -252,8 +349,6 @@ holistic.onResults((results) => {
     canvasCtx.fillStyle = 'rgba(0, 0, 0, 1.0)';
     canvasCtx.fillRect(0, 0, w, h);
   }
-
-
 
   // Draw Pose Skeleton if enabled
   if (options.showPose && results.poseLandmarks) {
@@ -296,10 +391,6 @@ holistic.onResults((results) => {
 
   // Draw Corner-pinned White Box connecting thumb/index tips of both hands (Preset 1 only)
   if (options.activePreset === 1 && options.showCornerpin && results.leftHandLandmarks && results.rightHandLandmarks) {
-    const w = canvasElement.width;
-    const h = canvasElement.height;
-
-    // Landmark 4 = THUMB_TIP, Landmark 8 = INDEX_FINGER_TIP
     const lhThumb = results.leftHandLandmarks[4];
     const lhIndex = results.leftHandLandmarks[8];
     const rhThumb = results.rightHandLandmarks[4];
@@ -328,8 +419,6 @@ holistic.onResults((results) => {
 
   // Draw Preset 2 Glow Mesh (Connecting all H1 points to H2 points, length color reactive & glow)
   if (options.activePreset === 2 && results.leftHandLandmarks && results.rightHandLandmarks) {
-    const w = canvasElement.width;
-    const h = canvasElement.height;
     const lh = results.leftHandLandmarks;
     const rh = results.rightHandLandmarks;
 
@@ -566,7 +655,11 @@ holistic.onResults((results) => {
     canvasCtx.restore();
   }
 
-  canvasCtx.restore(); // Restore context to default (unmirrored) for HUD text
+  if (options.flipH || options.flipV) {
+    canvasCtx.restore(); // Restore flip scale/translate
+  }
+
+  canvasCtx.restore(); // Restore base clearRect context
 
   // 2. Draw HUD Skeletons Status (Exactly replicating CV2 putText colors & positions)
   canvasCtx.font = 'bold 20px monospace';
@@ -577,7 +670,9 @@ holistic.onResults((results) => {
 
   // Draw FPS Status
   canvasCtx.fillText(`FPS: ${fps}`, 20, 75);
-});
+
+  reqFrameId = requestAnimationFrame(renderLoop);
+}
 
 // Setup Keyboard Listeners (Replicating desktop tracking control shortcuts)
 document.addEventListener('keydown', (event) => {
@@ -629,10 +724,63 @@ document.addEventListener('keydown', (event) => {
 
 // Start camera stream & initialization
 async function startTracking() {
+  console.log('start clicked');
+
+  if (typeof FilesetResolver === 'undefined') {
+    console.log('FilesetResolver is undefined, attempting dynamic import...');
+    try {
+      const module = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js");
+      FilesetResolver = module.FilesetResolver;
+      HandLandmarker = module.HandLandmarker;
+      PoseLandmarker = module.PoseLandmarker;
+      console.log('Successfully loaded FilesetResolver dynamically.');
+    } catch (e) {
+      console.error('MediaPipe tasks-vision bundle did not load. Check the script tag URL and order in index.html.', e);
+      return;
+    }
+  }
+
   try {
     startCameraBtn.style.display = 'none';
     loadingContainer.style.display = 'block';
-    startLoadingProgress();
+    loadingText.textContent = 'Loading model...';
+    loadingAnimation = progressBarFill.animate(
+      [{ width: '30%' }, { width: '70%' }],
+      { duration: 800, direction: 'alternate', iterations: Infinity, easing: 'ease-in-out' }
+    );
+
+    console.log('1. FilesetResolver loading...');
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+    );
+    console.log('2. FilesetResolver ready');
+
+    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        delegate: "GPU"
+      },
+      runningMode: "VIDEO",
+      numHands: 2
+    });
+    console.log('3. HandLandmarker ready');
+
+    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+        delegate: "GPU"
+      },
+      runningMode: "VIDEO",
+      numPoses: 1
+    });
+    console.log('4. PoseLandmarker ready');
+
+    // Hide loading container and clear pulse animation
+    if (loadingAnimation) {
+      loadingAnimation.cancel();
+    }
+    loadingContainer.style.display = 'none';
+    console.log('5. Loading hidden');
 
     activeStream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -642,38 +790,53 @@ async function startTracking() {
       },
       audio: false
     });
+    console.log('6. Camera stream granted');
 
     videoElement.srcObject = activeStream;
 
-    camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await holistic.send({ image: videoElement });
-      },
-      width: 1280,
-      height: 720
-    });
+    await new Promise(r => videoElement.addEventListener('loadedmetadata', r, { once: true }));
+    console.log('7. Video metadata loaded, dimensions:', videoElement.videoWidth, videoElement.videoHeight);
 
-    await camera.start();
+    await videoElement.play();
+    console.log('8. Video playing');
+
+    canvasElement.width = videoElement.videoWidth;
+    canvasElement.height = videoElement.videoHeight;
+    offscreenCanvas.width = videoElement.videoWidth;
+    offscreenCanvas.height = videoElement.videoHeight;
+    trailCanvas.width = videoElement.videoWidth;
+    trailCanvas.height = videoElement.videoHeight;
+
+    canvasElement.style.display = 'block';
+    controlBar.style.display = 'flex';
+    presetSelector.style.display = 'flex';
+    updateButtonHighlights();
+    updatePresetHighlights();
+    console.log('9. Canvas sized:', canvasElement.width, canvasElement.height);
+
+    lastHandTimestamp = -1;
+    lastPoseTimestamp = -1;
+    reqFrameId = requestAnimationFrame(renderLoop);
+    console.log('10. Loop started');
+
   } catch (error) {
     console.error("Camera access or init error:", error);
-    clearInterval(progressInterval);
+    if (loadingAnimation) {
+      loadingAnimation.cancel();
+    }
+    loadingContainer.style.display = 'none';
+    startCameraBtn.style.display = 'block';
     alert(`Failed to start tracking: ${error.message}`);
-    stopTracking();
   }
 }
 
 // Stop tracking & cleanup
 function stopTracking() {
-  isLoaded = false;
-  lastFrameTime = 0;
-  fps = 0;
-  clearInterval(progressInterval);
-
-  if (camera) {
-    camera.stop();
-    camera = null;
+  if (reqFrameId) {
+    cancelAnimationFrame(reqFrameId);
+    reqFrameId = null;
   }
-
+  
   if (activeStream) {
     activeStream.getTracks().forEach(track => track.stop());
     activeStream = null;
@@ -690,7 +853,16 @@ function stopTracking() {
   controlBar.style.display = 'none';
   presetSelector.style.display = 'none';
   startCameraBtn.style.display = 'block';
-}
 
-// Event Listeners
-startCameraBtn.addEventListener('click', startTracking);
+  if (handLandmarker) {
+    handLandmarker.close();
+    handLandmarker = null;
+  }
+  if (poseLandmarker) {
+    poseLandmarker.close();
+    poseLandmarker = null;
+  }
+
+  lastFrameTime = 0;
+  fps = 0;
+}
