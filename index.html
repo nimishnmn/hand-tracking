@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Holistic Vision Tracker</title>
+  <meta name="description" content="Minimalist web-based hand tracking using MediaPipe Holistic.">
+  <link rel="stylesheet" href="styles.css">
+  
+  <!-- MediaPipe Dependencies -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <!-- Single flat start button in the center -->
+  <button id="start-camera-btn">Start</button>
+
+  <!-- Percentage progress bar loader -->
+  <div id="loading-container">
+    <div id="loading-text">Loading: 0%</div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progress-bar-fill"></div>
+    </div>
+  </div>
+
+  <!-- On-screen controls for mobile/phone users -->
+  <div id="control-bar">
+    <button id="btn-face" class="control-btn">Face [F]</button>
+    <button id="btn-pose" class="control-btn">Pose [P]</button>
+    <button id="btn-hands" class="control-btn">Hands [H]</button>
+    <button id="btn-quit" class="control-btn quit-btn">Quit [Esc]</button>
+  </div>
+
+  <!-- Fullscreen Canvas container -->
+  <div id="canvas-container">
+    <canvas id="output-canvas" width="1280" height="720"></canvas>
+  </div>
+
+  <!-- Hidden video stream input -->
+  <video id="webcam" width="1280" height="720" autoplay playsinline></video>
+
+  <script src="app.js"></script>
+</body>
+</html>
