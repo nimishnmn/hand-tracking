@@ -105,6 +105,7 @@ with mp_holistic.Holistic(
 ) as holistic:
 
     while True:
+        loop_start = time.time()
 
         success, frame = cap.read()
         
@@ -473,6 +474,12 @@ with mp_holistic.Holistic(
         elif key == ord('5'):
             active_preset = 5
             print("Preset 5 activated")
+
+        # Lock to 25 FPS (40ms interval)
+        elapsed = time.time() - loop_start
+        remaining = 0.04 - elapsed
+        if remaining > 0:
+            time.sleep(remaining)
 
 
 

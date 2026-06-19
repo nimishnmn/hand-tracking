@@ -114,6 +114,7 @@ let loadingAnimation = null;
 let lastHandTimestamp = -1;
 let lastPoseTimestamp = -1;
 let lastFrameTime = 0;
+let lastRenderTime = 0;
 let fps = 0;
 
 // Default toggle states (All OFF by default)
@@ -268,6 +269,15 @@ async function renderLoop(nowMs) {
     reqFrameId = requestAnimationFrame(renderLoop);
     return;
   }
+
+  // Lock to 25 FPS (40ms interval)
+  const fpsInterval = 1000 / 25;
+  const elapsed = nowMs - lastRenderTime;
+  if (elapsed < fpsInterval) {
+    reqFrameId = requestAnimationFrame(renderLoop);
+    return;
+  }
+  lastRenderTime = nowMs - (elapsed % fpsInterval);
 
   console.log('frame, video ready state:', videoElement.readyState);
 
@@ -908,6 +918,7 @@ function stopTracking() {
   lastLeftHandLandmarks = null;
   lastRightHandLandmarks = null;
   lastPoseLandmarks = null;
+  lastRenderTime = 0;
 
   if (reqFrameId) {
     cancelAnimationFrame(reqFrameId);
