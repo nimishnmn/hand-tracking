@@ -15,6 +15,11 @@ const btnFlipH = document.getElementById('btn-fliph');
 const btnFlipV = document.getElementById('btn-flipv');
 const btnQuit = document.getElementById('btn-quit');
 
+// Preset Selector Elements
+const presetSelector = document.getElementById('preset-selector');
+const btnPreset1 = document.getElementById('preset-1');
+const btnPreset2 = document.getElementById('preset-2');
+
 // Global States
 let activeStream = null;
 let camera = null;
@@ -30,7 +35,8 @@ const options = {
   showHands: false,
   showCornerpin: true, // Always active
   flipH: false,
-  flipV: false
+  flipV: false,
+  activePreset: 1
 };
 
 // Update CSS classes for active buttons
@@ -40,6 +46,25 @@ function updateButtonHighlights() {
   btnFlipH.classList.toggle('active', options.flipH);
   btnFlipV.classList.toggle('active', options.flipV);
 }
+
+// Update preset highlights
+function updatePresetHighlights() {
+  btnPreset1.classList.toggle('active', options.activePreset === 1);
+  btnPreset2.classList.toggle('active', options.activePreset === 2);
+}
+
+// Preset buttons click listeners
+btnPreset1.addEventListener('click', () => {
+  options.activePreset = 1;
+  updatePresetHighlights();
+  console.log('Preset 1 activated');
+});
+
+btnPreset2.addEventListener('click', () => {
+  options.activePreset = 2;
+  updatePresetHighlights();
+  console.log('Preset 2 activated');
+});
 
 // Attach tap/click events to on-screen control buttons
 
@@ -102,10 +127,11 @@ function finishLoadingProgress() {
   setTimeout(() => {
     loadingContainer.style.display = 'none';
     canvasElement.style.display = 'block';
-    
     // Show flat on-screen buttons bar & highlight defaults
     controlBar.style.display = 'flex';
+    presetSelector.style.display = 'flex';
     updateButtonHighlights();
+    updatePresetHighlights();
   }, 350);
 }
 
@@ -156,6 +182,12 @@ holistic.onResults((results) => {
   // Draw base video frame
   canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
+  // Preset 2: Reduce exposure of background video by 75%
+  if (options.activePreset === 2) {
+    canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+  }
+
 
 
   // Draw Pose Skeleton if enabled
@@ -197,8 +229,8 @@ holistic.onResults((results) => {
     }
   }
 
-  // Draw Corner-pinned White Box connecting thumb/index tips of both hands
-  if (options.showCornerpin && results.leftHandLandmarks && results.rightHandLandmarks) {
+  // Draw Corner-pinned White Box connecting thumb/index tips of both hands (Preset 1 only)
+  if (options.activePreset === 1 && options.showCornerpin && results.leftHandLandmarks && results.rightHandLandmarks) {
     const w = canvasElement.width;
     const h = canvasElement.height;
 
@@ -227,6 +259,44 @@ holistic.onResults((results) => {
     canvasCtx.strokeStyle = '#ffffff';
     canvasCtx.lineWidth = 3;
     canvasCtx.stroke();
+  }
+
+  // Draw Preset 2 Glow Mesh (Connecting all H1 points to H2 points, length color reactive & glow)
+  if (options.activePreset === 2 && results.leftHandLandmarks && results.rightHandLandmarks) {
+    const w = canvasElement.width;
+    const h = canvasElement.height;
+    const lh = results.leftHandLandmarks;
+    const rh = results.rightHandLandmarks;
+
+    canvasCtx.save();
+    canvasCtx.globalCompositeOperation = 'lighter';
+    canvasCtx.lineWidth = 1;
+
+    const maxDiag = Math.sqrt(w * w + h * h);
+
+    for (let i = 0; i < 21; i++) {
+      const pt1 = { x: lh[i].x * w, y: lh[i].y * h };
+      for (let j = 0; j < 21; j++) {
+        const pt2 = { x: rh[j].x * w, y: rh[j].y * h };
+
+        const dx = pt1.x - pt2.x;
+        const dy = pt1.y - pt2.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // Length reactive color spectrum (Cyan to Pink/Magenta)
+        const ratio = Math.min(dist / (maxDiag * 0.65), 1.0);
+        const hue = 180 + ratio * 140;
+
+        // Drawing glow line (highly transparent, slightly wider)
+        canvasCtx.strokeStyle = `hsla(${hue}, 100%, 55%, 0.15)`;
+        
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(pt1.x, pt1.y);
+        canvasCtx.lineTo(pt2.x, pt2.y);
+        canvasCtx.stroke();
+      }
+    }
+    canvasCtx.restore();
   }
 
   canvasCtx.restore(); // Restore context to default (unmirrored) for HUD text
@@ -267,6 +337,14 @@ document.addEventListener('keydown', (event) => {
     options.flipV = !options.flipV;
     updateButtonHighlights();
     console.log(`Flip V: ${options.flipV ? 'ON' : 'OFF'}`);
+  } else if (key === '1') {
+    options.activePreset = 1;
+    updatePresetHighlights();
+    console.log('Preset 1 activated');
+  } else if (key === '2') {
+    options.activePreset = 2;
+    updatePresetHighlights();
+    console.log('Preset 2 activated');
   }
 });
 
@@ -331,6 +409,7 @@ function stopTracking() {
   canvasElement.style.display = 'none';
   loadingContainer.style.display = 'none';
   controlBar.style.display = 'none';
+  presetSelector.style.display = 'none';
   startCameraBtn.style.display = 'block';
 }
 
