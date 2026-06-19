@@ -2,6 +2,9 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import time
+
+# Persistent trail buffer for Preset 4 ghost trails
+trail_buffer = None
 import math
 
 # -------------------------
@@ -67,6 +70,22 @@ with mp_holistic.Holistic(
         # Preset 2: Reduce exposure of background video by 75%
         if active_preset == 2:
             frame = (frame * 0.25).astype(np.uint8)
+
+        # Preset 3: Dim background by 40%
+        if active_preset == 3:
+            frame = (frame * 0.60).astype(np.uint8)
+
+        # Preset 4: Dim background by 85%
+        if active_preset == 4:
+            if trail_buffer is None or trail_buffer.shape != frame.shape:
+                trail_buffer = np.zeros_like(frame)
+            # Fade the trail buffer
+            trail_buffer = (trail_buffer * 0.85).astype(np.uint8)
+            frame = (frame * 0.15).astype(np.uint8)
+
+        # Preset 5: Full black background
+        if active_preset == 5:
+            frame = np.zeros_like(frame)
 
 
         # -------------------------
@@ -159,6 +178,127 @@ with mp_holistic.Holistic(
             cv2.addWeighted(overlay, 0.35, frame, 0.65, 0, frame)
 
         # -------------------------
+        # Preset 3: Finger Portal Filters
+        # -------------------------
+        if active_preset == 3 and results.left_hand_landmarks and results.right_hand_landmarks:
+            h, w, _ = frame.shape
+            lh = results.left_hand_landmarks.landmark
+            rh = results.right_hand_landmarks.landmark
+
+            finger_pairs = [
+                (4, 8, 4, 8, 'invert'),
+                (8, 12, 8, 12, 'grayscale'),
+                (12, 16, 12, 16, 'duotone'),
+                (16, 20, 16, 20, 'pixelate'),
+            ]
+
+            clean = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+
+            for li1, li2, ri1, ri2, filter_name in finger_pairs:
+                pts = np.array([
+                    [int(lh[li1].x * w), int(lh[li1].y * h)],
+                    [int(lh[li2].x * w), int(lh[li2].y * h)],
+                    [int(rh[ri2].x * w), int(rh[ri2].y * h)],
+                    [int(rh[ri1].x * w), int(rh[ri1].y * h)],
+                ], np.int32)
+
+                mask = np.zeros((h, w), dtype=np.uint8)
+                cv2.fillConvexPoly(mask, pts, 255)
+
+                filtered = clean.copy()
+                if filter_name == 'invert':
+                    filtered = 255 - filtered
+                elif filter_name == 'grayscale':
+                    gray = cv2.cvtColor(filtered, cv2.COLOR_BGR2GRAY)
+                    filtered = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+                elif filter_name == 'duotone':
+                    gray = cv2.cvtColor(filtered, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+                    b_ch = np.full_like(gray, 255.0)
+                    g_ch = 255.0 * (1.0 - gray)
+                    r_ch = 255.0 * gray
+                    filtered = np.stack([b_ch, g_ch, r_ch], axis=-1).astype(np.uint8)
+                elif filter_name == 'pixelate':
+                    block = 8
+                    small = cv2.resize(filtered, (w // block, h // block), interpolation=cv2.INTER_LINEAR)
+                    filtered = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+
+                mask_3ch = cv2.merge([mask, mask, mask])
+                frame = np.where(mask_3ch == 255, filtered, frame)
+                cv2.polylines(frame, [pts], True, (255, 255, 255), 2)
+
+        # -------------------------
+        # Preset 4: Ghost Trails
+        # -------------------------
+        if active_preset == 4 and (results.left_hand_landmarks or results.right_hand_landmarks):
+            h, w, _ = frame.shape
+
+            if results.left_hand_landmarks:
+                for lm in results.left_hand_landmarks.landmark:
+                    px, py = int(lm.x * w), int(lm.y * h)
+                    cv2.circle(trail_buffer, (px, py), 5, (255, 255, 0), -1)
+                    cv2.circle(frame, (px, py), 6, (255, 255, 0), -1)
+
+            if results.right_hand_landmarks:
+                for lm in results.right_hand_landmarks.landmark:
+                    px, py = int(lm.x * w), int(lm.y * h)
+                    cv2.circle(trail_buffer, (px, py), 5, (128, 0, 255), -1)
+                    cv2.circle(frame, (px, py), 6, (128, 0, 255), -1)
+
+            cv2.addWeighted(trail_buffer, 0.7, frame, 1.0, 0, frame)
+
+        # -------------------------
+        # Preset 5: Void Skeleton
+        # -------------------------
+        if active_preset == 5:
+            h, w, _ = frame.shape
+            elapsed = time.time()
+            pulse_r = int(4 + 3 * math.sin(elapsed * 4))
+
+            hand_conns = [
+                (0,1),(1,2),(2,3),(3,4),
+                (0,5),(5,6),(6,7),(7,8),
+                (0,9),(9,10),(10,11),(11,12),
+                (0,13),(13,14),(14,15),(15,16),
+                (0,17),(17,18),(18,19),(19,20),
+                (5,9),(9,13),(13,17)
+            ]
+            fingertips = [4, 8, 12, 16, 20]
+
+            if results.left_hand_landmarks:
+                lh = results.left_hand_landmarks.landmark
+                overlay = frame.copy()
+                for a, b in hand_conns:
+                    p1 = (int(lh[a].x * w), int(lh[a].y * h))
+                    p2 = (int(lh[b].x * w), int(lh[b].y * h))
+                    cv2.line(overlay, p1, p2, (255, 255, 0), 8)
+                cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
+                for a, b in hand_conns:
+                    p1 = (int(lh[a].x * w), int(lh[a].y * h))
+                    p2 = (int(lh[b].x * w), int(lh[b].y * h))
+                    cv2.line(frame, p1, p2, (255, 255, 0), 3)
+                for i in range(21):
+                    r = pulse_r if i in fingertips else 3
+                    pt = (int(lh[i].x * w), int(lh[i].y * h))
+                    cv2.circle(frame, pt, r, (255, 255, 0), -1)
+
+            if results.right_hand_landmarks:
+                rh = results.right_hand_landmarks.landmark
+                overlay = frame.copy()
+                for a, b in hand_conns:
+                    p1 = (int(rh[a].x * w), int(rh[a].y * h))
+                    p2 = (int(rh[b].x * w), int(rh[b].y * h))
+                    cv2.line(overlay, p1, p2, (255, 0, 200), 8)
+                cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
+                for a, b in hand_conns:
+                    p1 = (int(rh[a].x * w), int(rh[a].y * h))
+                    p2 = (int(rh[b].x * w), int(rh[b].y * h))
+                    cv2.line(frame, p1, p2, (255, 0, 200), 3)
+                for i in range(21):
+                    r = pulse_r if i in fingertips else 3
+                    pt = (int(rh[i].x * w), int(rh[i].y * h))
+                    cv2.circle(frame, pt, r, (255, 0, 200), -1)
+
+        # -------------------------
         # Status Text
         # -------------------------
         cv2.putText(
@@ -182,19 +322,13 @@ with mp_holistic.Holistic(
         )
 
         # Draw top-right presets HUD
-        # Box 1
-        color1 = (0, 255, 0) if active_preset == 1 else (100, 100, 100)
-        thick1 = -1 if active_preset == 1 else 2
-        cv2.rectangle(frame, (1180, 20), (1220, 60), color1, thick1)
-        textColor1 = (0, 0, 0) if active_preset == 1 else (255, 255, 255)
-        cv2.putText(frame, "1", (1193, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.7, textColor1, 2)
-        
-        # Box 2
-        color2 = (0, 255, 0) if active_preset == 2 else (100, 100, 100)
-        thick2 = -1 if active_preset == 2 else 2
-        cv2.rectangle(frame, (1230, 20), (1270, 60), color2, thick2)
-        textColor2 = (0, 0, 0) if active_preset == 2 else (255, 255, 255)
-        cv2.putText(frame, "2", (1243, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.7, textColor2, 2)
+        for pi in range(1, 6):
+            box_x = 1080 + (pi - 1) * 50
+            color_box = (0, 255, 0) if active_preset == pi else (100, 100, 100)
+            thick_box = -1 if active_preset == pi else 2
+            cv2.rectangle(frame, (box_x, 20), (box_x + 40, 60), color_box, thick_box)
+            text_col = (0, 0, 0) if active_preset == pi else (255, 255, 255)
+            cv2.putText(frame, str(pi), (box_x + 13, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_col, 2)
 
         # Show frame
         cv2.imshow("MediaPipe Holistic Tracking", frame)
@@ -230,6 +364,19 @@ with mp_holistic.Holistic(
         elif key == ord('2'):
             active_preset = 2
             print("Preset 2 activated")
+
+        elif key == ord('3'):
+            active_preset = 3
+            print("Preset 3 activated")
+
+        elif key == ord('4'):
+            active_preset = 4
+            trail_buffer = None
+            print("Preset 4 activated")
+
+        elif key == ord('5'):
+            active_preset = 5
+            print("Preset 5 activated")
 
 
 
