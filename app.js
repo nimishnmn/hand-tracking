@@ -137,6 +137,9 @@ let reqFrameId = null;
 let lastLeftHandLandmarks = null;
 let lastRightHandLandmarks = null;
 let lastPoseLandmarks = null;
+let leftHandAge = 0;
+let rightHandAge = 0;
+let poseAge = 0;
 let loadingAnimation = null;
 let lastHandTimestamp = -1;
 let lastPoseTimestamp = -1;
@@ -638,9 +641,11 @@ async function renderLoop(nowMs) {
   }
 
   const alpha = 0.25; // Smoothing factor
+  const MAX_AGE = 5;
   
   // Smooth & Persist Left Hand
   if (currentLeftHand) {
+    leftHandAge = 0;
     if (!lastLeftHandLandmarks) {
       lastLeftHandLandmarks = currentLeftHand.map(pt => ({ ...pt }));
     } else {
@@ -653,10 +658,16 @@ async function renderLoop(nowMs) {
         }
       }
     }
+  } else {
+    leftHandAge++;
+    if (leftHandAge > MAX_AGE) {
+      lastLeftHandLandmarks = null;
+    }
   }
 
   // Smooth & Persist Right Hand
   if (currentRightHand) {
+    rightHandAge = 0;
     if (!lastRightHandLandmarks) {
       lastRightHandLandmarks = currentRightHand.map(pt => ({ ...pt }));
     } else {
@@ -669,6 +680,11 @@ async function renderLoop(nowMs) {
         }
       }
     }
+  } else {
+    rightHandAge++;
+    if (rightHandAge > MAX_AGE) {
+      lastRightHandLandmarks = null;
+    }
   }
 
   let currentPose = null;
@@ -678,6 +694,7 @@ async function renderLoop(nowMs) {
 
   // Smooth & Persist Pose
   if (currentPose) {
+    poseAge = 0;
     if (!lastPoseLandmarks) {
       lastPoseLandmarks = currentPose.map(pt => ({ ...pt }));
     } else {
@@ -689,6 +706,11 @@ async function renderLoop(nowMs) {
           lastPoseLandmarks[i].visibility = currentPose[i].visibility;
         }
       }
+    }
+  } else {
+    poseAge++;
+    if (poseAge > MAX_AGE) {
+      lastPoseLandmarks = null;
     }
   }
 
@@ -1070,8 +1092,8 @@ async function renderLoop(nowMs) {
         const p = { x: (lh[8].x + lh[4].x)/2, y: (lh[8].y + lh[4].y)/2 };
         if (options.flipH) p.x = 1.0 - p.x;
         if (options.flipV) p.y = 1.0 - p.y;
-        const dx = (lh[8].x - lh[4].x) * rect.width;
-        const dy = (lh[8].y - lh[4].y) * rect.height;
+        const dx = (lh[8].x - lh[4].x) * canvasElement.width;
+        const dy = (lh[8].y - lh[4].y) * canvasElement.height;
         const dist = Math.sqrt(dx*dx + dy*dy);
         activeHands.push({ side: 'left', pinch: p, isPinching: dist < 45 });
       }
@@ -1079,8 +1101,8 @@ async function renderLoop(nowMs) {
         const p = { x: (rh[8].x + rh[4].x)/2, y: (rh[8].y + rh[4].y)/2 };
         if (options.flipH) p.x = 1.0 - p.x;
         if (options.flipV) p.y = 1.0 - p.y;
-        const dx = (rh[8].x - rh[4].x) * rect.width;
-        const dy = (rh[8].y - rh[4].y) * rect.height;
+        const dx = (rh[8].x - rh[4].x) * canvasElement.width;
+        const dy = (rh[8].y - rh[4].y) * canvasElement.height;
         const dist = Math.sqrt(dx*dx + dy*dy);
         activeHands.push({ side: 'right', pinch: p, isPinching: dist < 45 });
       }
@@ -1094,8 +1116,8 @@ async function renderLoop(nowMs) {
           for (let i = 0; i < 4; i++) {
             let closeHand = null;
             for (const h of activeHands) {
-              const dx = (h.pinch.x - dotCoords[i].x) * rect.width;
-              const dy = (h.pinch.y - dotCoords[i].y) * rect.height;
+              const dx = (h.pinch.x - dotCoords[i].x) * canvasElement.width;
+              const dy = (h.pinch.y - dotCoords[i].y) * canvasElement.height;
               if (Math.sqrt(dx*dx + dy*dy) < 35) {
                 closeHand = h;
                 break;
@@ -1127,10 +1149,10 @@ async function renderLoop(nowMs) {
           }
         }
 
-        pt2 = { x: dotCoords[0].x * rect.width, y: dotCoords[0].y * rect.height }; // TL
-        pt3 = { x: dotCoords[1].x * rect.width, y: dotCoords[1].y * rect.height }; // TR
-        pt4 = { x: dotCoords[2].x * rect.width, y: dotCoords[2].y * rect.height }; // BR
-        pt1 = { x: dotCoords[3].x * rect.width, y: dotCoords[3].y * rect.height }; // BL
+        pt2 = getScreenCoords(dotCoords[0], rect); // TL
+        pt3 = getScreenCoords(dotCoords[1], rect); // TR
+        pt4 = getScreenCoords(dotCoords[2], rect); // BR
+        pt1 = getScreenCoords(dotCoords[3], rect); // BL
         hasValidWarpCoords = true;
       } else if (lh && rh) {
         const pt1_screen = getScreenCoords(lh[0], rect);
@@ -1207,8 +1229,8 @@ async function renderLoop(nowMs) {
         for (let i = 0; i < 4; i++) {
           let isNear = (selectedDotIndex === i);
           for (const h of activeHands) {
-            const dx = (h.pinch.x - dotCoords[i].x) * rect.width;
-            const dy = (h.pinch.y - dotCoords[i].y) * rect.height;
+            const dx = (h.pinch.x - dotCoords[i].x) * canvasElement.width;
+            const dy = (h.pinch.y - dotCoords[i].y) * canvasElement.height;
             if (Math.sqrt(dx*dx + dy*dy) < 100) {
               isNear = true;
               break;
