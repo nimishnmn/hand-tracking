@@ -379,6 +379,9 @@ document.addEventListener('DOMContentLoaded', () => {
   canvasCtx = canvasElement.getContext('2d');
   startCameraBtn = document.getElementById('start-camera-btn');
   welcomeScreen = document.getElementById('welcome-screen');
+  if (welcomeScreen) {
+    document.documentElement.style.setProperty('--bg-pattern', `url(${generatePattern()})`);
+  }
   loadingContainer = document.getElementById('loading-container');
   loadingText = document.getElementById('loading-text');
   progressBarFill = document.getElementById('progress-bar-fill');
@@ -1522,4 +1525,44 @@ function stopTracking() {
 
   lastFrameTime = 0;
   fps = 0;
+}
+
+function generatePattern() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1000;
+  canvas.height = 1500;
+  const ctx = canvas.getContext('2d');
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  const w = canvas.width;
+  const h = canvas.height;
+  
+  const rh = 40;     // height of segment in y-direction
+  const gap = 15;    // vertical gap between segments
+  const spacing = 75; // horizontal spacing between diagonal lines
+  const step = rh + gap;
+  
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#ffffff'; // white segments (opacity in CSS makes it faint gray)
+  
+  for (let y = -rh * 2; y < h + rh * 2; y += step) {
+    for (let x_base = -h; x_base < w + h; x_base += spacing) {
+      const x = x_base - y;
+      
+      // Normalized position from bottom-left to top-right
+      const t = (x / w + (h - y) / h) / 2;
+      const t_clamped = Math.max(0, Math.min(1, t));
+      
+      // Thickness: thicker at bottom-left (15px), thinner at top-right (1.5px)
+      ctx.lineWidth = 1.5 + 13.5 * (1.0 - t_clamped);
+      
+      ctx.beginPath();
+      ctx.moveTo(x, y + rh);
+      ctx.lineTo(x + rh, y);
+      ctx.stroke();
+    }
+  }
+  
+  return canvas.toDataURL();
 }
