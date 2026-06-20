@@ -74,6 +74,7 @@ let canvasElement;
 let canvasCtx;
 let startCameraBtn;
 let welcomeScreen;
+let bgPatternLayer;
 let loadingContainer;
 let loadingText;
 let progressBarFill;
@@ -379,7 +380,8 @@ document.addEventListener('DOMContentLoaded', () => {
   canvasCtx = canvasElement.getContext('2d');
   startCameraBtn = document.getElementById('start-camera-btn');
   welcomeScreen = document.getElementById('welcome-screen');
-  if (welcomeScreen) {
+  bgPatternLayer = document.getElementById('bg-pattern-layer');
+  if (bgPatternLayer) {
     document.documentElement.style.setProperty('--bg-pattern', `url(${generatePattern()})`);
   }
   loadingContainer = document.getElementById('loading-container');
@@ -1391,6 +1393,7 @@ async function startTracking() {
 
   try {
     welcomeScreen.style.display = 'none';
+    if (bgPatternLayer) bgPatternLayer.style.opacity = '0.02';
     loadingContainer.style.display = 'block';
     loadingText.textContent = 'Loading model...';
     loadingAnimation = progressBarFill.animate(
@@ -1466,6 +1469,7 @@ async function startTracking() {
 
     lastHandTimestamp = -1;
     lastPoseTimestamp = -1;
+    if (bgPatternLayer) bgPatternLayer.style.display = 'none';
     reqFrameId = requestAnimationFrame(renderLoop);
     console.log('10. Loop started');
 
@@ -1476,6 +1480,10 @@ async function startTracking() {
     }
     loadingContainer.style.display = 'none';
     welcomeScreen.style.display = 'block';
+    if (bgPatternLayer) {
+      bgPatternLayer.style.display = 'block';
+      bgPatternLayer.style.opacity = '0.08';
+    }
     alert(`Failed to start tracking: ${error.message}`);
   }
 }
@@ -1513,6 +1521,10 @@ function stopTracking() {
   preset6OverlayContainer.style.display = 'none';
   pausePlayers();
   welcomeScreen.style.display = 'block';
+  if (bgPatternLayer) {
+    bgPatternLayer.style.display = 'block';
+    bgPatternLayer.style.opacity = '0.08';
+  }
 
   if (handLandmarker) {
     handLandmarker.close();
@@ -1543,7 +1555,7 @@ function generatePattern() {
   const spacing = 75; // horizontal spacing between diagonal lines
   const step = rh + gap;
   
-  ctx.lineCap = 'round';
+  ctx.lineCap = 'butt';
   ctx.strokeStyle = '#ffffff'; // white segments (opacity in CSS makes it faint gray)
   
   for (let y = -rh * 2; y < h + rh * 2; y += step) {
