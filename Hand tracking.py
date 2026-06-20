@@ -122,6 +122,8 @@ overlay_flip_h = False
 overlay_flip_v = False
 overlay_paused = False
 last_frame_o = None
+unlimited_fps = False
+tracking_mode = 'hand'
 
 # -------------------------
 # Main Loop
@@ -470,19 +472,41 @@ with mp_holistic.Holistic(
                     vL = rh_lms
                     vR = lh_lms
 
-                # Target corners between Left & Right Hand's middle finger tips and lowest points:
-                # Find lowest points (maximum y) for left and right hands dynamically
-                lowest_lh = max(vL, key=lambda lm: lm.y)
-                lowest_rh = max(vR, key=lambda lm: lm.y)
-
-                # pt1: Left Hand lowest point
-                # pt2: Left Hand middle finger tip (12)
-                # pt3: Right Hand middle finger tip (12)
-                # pt4: Right Hand lowest point
-                pt1 = (int(lowest_lh.x * w), int(lowest_lh.y * h))
-                pt2 = (int(vL[12].x * w), int(vL[12].y * h))
-                pt3 = (int(vR[12].x * w), int(vR[12].y * h))
-                pt4 = (int(lowest_rh.x * w), int(lowest_rh.y * h))
+                if tracking_mode == 'hand':
+                    # Target corners between Left & Right Hand's middle finger tips and lowest points:
+                    # Find lowest points (maximum y) for left and right hands dynamically
+                    lowest_lh = max(vL, key=lambda lm: lm.y)
+                    lowest_rh = max(vR, key=lambda lm: lm.y)
+                    pt1 = (int(lowest_lh.x * w), int(lowest_lh.y * h))
+                    pt2 = (int(vL[12].x * w), int(vL[12].y * h))
+                    pt3 = (int(vR[12].x * w), int(vR[12].y * h))
+                    pt4 = (int(lowest_rh.x * w), int(lowest_rh.y * h))
+                elif tracking_mode == 'fingers':
+                    # Target corners between Left & Right Hand's index and thumb tips:
+                    pt1 = (int(vL[4].x * w), int(vL[4].y * h))
+                    pt2 = (int(vL[8].x * w), int(vL[8].y * h))
+                    pt3 = (int(vR[8].x * w), int(vR[8].y * h))
+                    pt4 = (int(vR[4].x * w), int(vR[4].y * h))
+                else: # 'pinch'
+                    # Average of index and thumb tips
+                    ptL_x = (vL[8].x + vL[4].x) / 2 * w
+                    ptL_y = (vL[8].y + vL[4].y) / 2 * h
+                    ptR_x = (vR[8].x + vR[4].x) / 2 * w
+                    ptR_y = (vR[8].y + vR[4].y) / 2 * h
+                    dx = ptR_x - ptL_x
+                    dy = ptR_y - ptL_y
+                    D = math.sqrt(dx*dx + dy*dy)
+                    if D == 0: D = 1
+                    ux = dx / D
+                    uy = dy / D
+                    vx = -uy
+                    vy = ux
+                    H = D / (w_o / h_o)
+                    
+                    pt2 = (int(ptL_x - (H/2) * vx), int(ptL_y - (H/2) * vy))
+                    pt3 = (int(ptR_x - (H/2) * vx), int(ptR_y - (H/2) * vy))
+                    pt4 = (int(ptR_x + (H/2) * vx), int(ptR_y + (H/2) * vy))
+                    pt1 = (int(ptL_x + (H/2) * vx), int(ptL_y + (H/2) * vy))
                 
                 # Source corners of the overlay video/image
                 src_pts = np.array([
@@ -519,15 +543,29 @@ with mp_holistic.Holistic(
         # -------------------------
         # Status Text
         # -------------------------
+        fps_text = f"FPS: {fps}"
+        if unlimited_fps:
+            fps_text += " (UNLIMITED)"
         cv2.putText(
             frame,
-            f"FPS: {fps}",
+            fps_text,
             (20, 40),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (0, 255, 255),
             2
         )
+
+        if active_preset == 6:
+            cv2.putText(
+                frame,
+                f"MODE: {tracking_mode.upper()} [T]",
+                (20, 85),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 0),
+                2
+            )
 
         # Draw top-right presets HUD
         start_x = w - 380
@@ -578,6 +616,19 @@ with mp_holistic.Holistic(
         elif key == ord('y'):
             flip_v = not flip_v
             print(f"Flip V: {'ON' if flip_v else 'OFF'}")
+
+        elif key == ord('f'):
+            unlimited_fps = not unlimited_fps
+            print(f"Unlimited FPS: {'ON' if unlimited_fps else 'OFF'}")
+
+        elif key == ord('t') and active_preset == 6:
+            if tracking_mode == 'hand':
+                tracking_mode = 'fingers'
+            elif tracking_mode == 'fingers':
+                tracking_mode = 'pinch'
+            else:
+                tracking_mode = 'hand'
+            print(f"Preset 6 Tracking Mode: {tracking_mode.upper()}")
 
         elif key == ord('1'):
             active_preset = 1
@@ -699,11 +750,12 @@ with mp_holistic.Holistic(
                     last_frame_o = temp_frame.copy()
                 print("Video forwarded 5 seconds")
 
-        # Lock to 25 FPS (40ms interval)
-        elapsed = time.time() - loop_start
-        remaining = 0.04 - elapsed
-        if remaining > 0:
-            time.sleep(remaining)
+        # Lock to 25 FPS (40ms interval) if not unlimited
+        if not unlimited_fps:
+            elapsed = time.time() - loop_start
+            remaining = 0.04 - elapsed
+            if remaining > 0:
+                time.sleep(remaining)
 
 
 

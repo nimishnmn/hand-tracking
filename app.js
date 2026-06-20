@@ -104,6 +104,12 @@ let preset6FlipVBtn;
 let preset6OverlayContainer;
 let overlayFlipH = false;
 let overlayFlipV = false;
+let universalPanel;
+let btnUnlimitedFps;
+let btnPreset6ModeHand;
+let btnPreset6ModeFingers;
+let btnPreset6ModePinch;
+let preset6TrackingMode = 'hand';
 
 // Offscreen canvas for pixel manipulation (Preset 3)
 let offscreenCanvas;
@@ -300,7 +306,8 @@ const options = {
   showOutline: false,
   flipH: false,
   flipV: false,
-  activePreset: 1
+  activePreset: 1,
+  unlimitedFps: false
 };
 
 // Update CSS classes for active buttons
@@ -309,6 +316,10 @@ function updateButtonHighlights() {
   btnHands.classList.toggle('active', options.showHands);
   btnFlipH.classList.toggle('active', options.flipH);
   btnFlipV.classList.toggle('active', options.flipV);
+  if (btnUnlimitedFps) btnUnlimitedFps.classList.toggle('active', options.unlimitedFps);
+  if (btnPreset6ModeHand) btnPreset6ModeHand.classList.toggle('active', preset6TrackingMode === 'hand');
+  if (btnPreset6ModeFingers) btnPreset6ModeFingers.classList.toggle('active', preset6TrackingMode === 'fingers');
+  if (btnPreset6ModePinch) btnPreset6ModePinch.classList.toggle('active', preset6TrackingMode === 'pinch');
 }
 
 // Update preset highlights
@@ -381,6 +392,11 @@ document.addEventListener('DOMContentLoaded', () => {
   preset6FlipHBtn = document.getElementById('preset6-fliph-btn');
   preset6FlipVBtn = document.getElementById('preset6-flipv-btn');
   preset6OverlayContainer = document.getElementById('preset6-overlay-container');
+  universalPanel = document.getElementById('universal-panel');
+  btnUnlimitedFps = document.getElementById('btn-unlimited-fps');
+  btnPreset6ModeHand = document.getElementById('preset6-mode-hand');
+  btnPreset6ModeFingers = document.getElementById('preset6-mode-fingers');
+  btnPreset6ModePinch = document.getElementById('preset6-mode-pinch');
 
   // Offscreen canvas for pixel manipulation (Preset 3)
   offscreenCanvas = document.createElement('canvas');
@@ -454,6 +470,30 @@ document.addEventListener('DOMContentLoaded', () => {
     preset6FlipVBtn.classList.toggle('active', overlayFlipV);
   });
 
+  btnUnlimitedFps.addEventListener('click', () => {
+    options.unlimitedFps = !options.unlimitedFps;
+    updateButtonHighlights();
+    console.log(`Unlimited FPS: ${options.unlimitedFps ? 'ON' : 'OFF'}`);
+  });
+
+  btnPreset6ModeHand.addEventListener('click', () => {
+    preset6TrackingMode = 'hand';
+    updateButtonHighlights();
+    console.log('Preset 6 Tracking Mode: Hand');
+  });
+
+  btnPreset6ModeFingers.addEventListener('click', () => {
+    preset6TrackingMode = 'fingers';
+    updateButtonHighlights();
+    console.log('Preset 6 Tracking Mode: Fingers');
+  });
+
+  btnPreset6ModePinch.addEventListener('click', () => {
+    preset6TrackingMode = 'pinch';
+    updateButtonHighlights();
+    console.log('Preset 6 Tracking Mode: Pinch');
+  });
+
   btnOutline.addEventListener('click', () => {
     options.showOutline = !options.showOutline;
     updatePresetHighlights();
@@ -498,14 +538,18 @@ async function renderLoop(nowMs) {
     return;
   }
 
-  // Lock to 25 FPS (40ms interval)
-  const fpsInterval = 1000 / 25;
-  const elapsed = nowMs - lastRenderTime;
-  if (elapsed < fpsInterval) {
-    reqFrameId = requestAnimationFrame(renderLoop);
-    return;
+  // Lock to 25 FPS (40ms interval) unless unlimitedFps is active
+  if (!options.unlimitedFps) {
+    const fpsInterval = 1000 / 25;
+    const elapsed = nowMs - lastRenderTime;
+    if (elapsed < fpsInterval) {
+      reqFrameId = requestAnimationFrame(renderLoop);
+      return;
+    }
+    lastRenderTime = nowMs - (elapsed % fpsInterval);
+  } else {
+    lastRenderTime = nowMs;
   }
-  lastRenderTime = nowMs - (elapsed % fpsInterval);
 
   console.log('frame, video ready state:', videoElement.readyState);
 
@@ -995,20 +1039,6 @@ async function renderLoop(nowMs) {
         vR = lh;
       }
       
-      // Find lowest points (maximum y) for left and right hands dynamically
-      let lowestL = vL[0];
-      let lowestR = vR[0];
-      for (let i = 1; i < 21; i++) {
-        if (vL[i].y > lowestL.y) lowestL = vL[i];
-        if (vR[i].y > lowestR.y) lowestR = vR[i];
-      }
-
-      // Middle finger tip is index 12
-      const pt1 = getScreenCoords(lowestL, rect);  // Left Hand lowest point
-      const pt2 = getScreenCoords(vL[12], rect);   // Left Middle Finger Tip
-      const pt3 = getScreenCoords(vR[12], rect);   // Right Middle Finger Tip
-      const pt4 = getScreenCoords(lowestR, rect);  // Right Hand lowest point
-      
       let w_o = 640;
       let h_o = 360;
       if (playerEl.tagName === 'VIDEO') {
@@ -1024,6 +1054,43 @@ async function renderLoop(nowMs) {
       }
       playerEl.style.width = w_o + 'px';
       playerEl.style.height = h_o + 'px';
+
+      let pt1, pt2, pt3, pt4;
+
+      if (preset6TrackingMode === 'hand') {
+        // Find lowest points (maximum y) for left and right hands dynamically
+        let lowestL = vL[0];
+        let lowestR = vR[0];
+        for (let i = 1; i < 21; i++) {
+          if (vL[i].y > lowestL.y) lowestL = vL[i];
+          if (vR[i].y > lowestR.y) lowestR = vR[i];
+        }
+        pt1 = getScreenCoords(lowestL, rect);  // Left Hand lowest point
+        pt2 = getScreenCoords(vL[12], rect);   // Left Middle Finger Tip
+        pt3 = getScreenCoords(vR[12], rect);   // Right Middle Finger Tip
+        pt4 = getScreenCoords(lowestR, rect);  // Right Hand lowest point
+      } else if (preset6TrackingMode === 'fingers') {
+        pt1 = getScreenCoords(vL[4], rect);    // Left Thumb Tip
+        pt2 = getScreenCoords(vL[8], rect);    // Left Index Tip
+        pt3 = getScreenCoords(vR[8], rect);    // Right Index Tip
+        pt4 = getScreenCoords(vR[4], rect);    // Right Thumb Tip
+      } else { // 'pinch'
+        const ptL = getScreenCoords({ x: (vL[8].x + vL[4].x)/2, y: (vL[8].y + vL[4].y)/2 }, rect);
+        const ptR = getScreenCoords({ x: (vR[8].x + vR[4].x)/2, y: (vR[8].y + vR[4].y)/2 }, rect);
+        const dx = ptR.x - ptL.x;
+        const dy = ptR.y - ptL.y;
+        const D = Math.sqrt(dx*dx + dy*dy) || 1;
+        const ux = dx / D;
+        const uy = dy / D;
+        const vx = -uy;
+        const vy = ux;
+        const H = D / (w_o / h_o);
+
+        pt2 = { x: ptL.x - (H/2) * vx, y: ptL.y - (H/2) * vy };
+        pt3 = { x: ptR.x - (H/2) * vx, y: ptR.y - (H/2) * vy };
+        pt4 = { x: ptR.x + (H/2) * vx, y: ptR.y + (H/2) * vy };
+        pt1 = { x: ptL.x + (H/2) * vx, y: ptL.y + (H/2) * vy };
+      }
 
       const x0 = overlayFlipH ? w_o : 0;
       const x1 = overlayFlipH ? 0 : w_o;
@@ -1225,6 +1292,7 @@ async function startTracking() {
     canvasElement.style.display = 'block';
     controlBar.style.display = 'flex';
     presetSelector.style.display = 'flex';
+    universalPanel.style.display = 'flex';
     updateButtonHighlights();
     updatePresetHighlights();
     console.log('9. Canvas sized:', canvasElement.width, canvasElement.height);
@@ -1272,6 +1340,7 @@ function stopTracking() {
   loadingContainer.style.display = 'none';
   controlBar.style.display = 'none';
   presetSelector.style.display = 'none';
+  universalPanel.style.display = 'none';
   btnOutline.style.display = 'none';
   preset6Panel.style.display = 'none';
   preset6OverlayContainer.style.display = 'none';
