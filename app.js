@@ -655,7 +655,7 @@ async function renderLoop(nowMs) {
     }
   }
 
-  const alpha = 0.25; // Smoothing factor
+  const alpha = 0.85; // Smoothing factor (higher = more responsive/less lag)
   const MAX_AGE = 5;
   
   // Smooth & Persist Left Hand
