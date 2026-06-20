@@ -109,7 +109,18 @@ let btnUnlimitedFps;
 let btnPreset6ModeHand;
 let btnPreset6ModeFingers;
 let btnPreset6ModePinch;
+let btnPreset6Mode3d;
 let preset6TrackingMode = 'hand';
+let dotCoords = [
+  { x: 0.25, y: 0.25 },
+  { x: 0.75, y: 0.25 },
+  { x: 0.75, y: 0.75 },
+  { x: 0.25, y: 0.75 }
+];
+let dotLoading = [0, 0, 0, 0];
+let selectedDotIndex = -1;
+let selectedHand = null;
+let lastFrameTime = 0; // to compute dt in renderLoop
 
 // Offscreen canvas for pixel manipulation (Preset 3)
 let offscreenCanvas;
@@ -320,6 +331,7 @@ function updateButtonHighlights() {
   if (btnPreset6ModeHand) btnPreset6ModeHand.classList.toggle('active', preset6TrackingMode === 'hand');
   if (btnPreset6ModeFingers) btnPreset6ModeFingers.classList.toggle('active', preset6TrackingMode === 'fingers');
   if (btnPreset6ModePinch) btnPreset6ModePinch.classList.toggle('active', preset6TrackingMode === 'pinch');
+  if (btnPreset6Mode3d) btnPreset6Mode3d.classList.toggle('active', preset6TrackingMode === '3d');
 }
 
 // Update preset highlights
@@ -397,6 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnPreset6ModeHand = document.getElementById('preset6-mode-hand');
   btnPreset6ModeFingers = document.getElementById('preset6-mode-fingers');
   btnPreset6ModePinch = document.getElementById('preset6-mode-pinch');
+  btnPreset6Mode3d = document.getElementById('preset6-mode-3d');
 
   // Offscreen canvas for pixel manipulation (Preset 3)
   offscreenCanvas = document.createElement('canvas');
@@ -492,6 +505,12 @@ document.addEventListener('DOMContentLoaded', () => {
     preset6TrackingMode = 'pinch';
     updateButtonHighlights();
     console.log('Preset 6 Tracking Mode: Pinch');
+  });
+
+  btnPreset6Mode3d.addEventListener('click', () => {
+    preset6TrackingMode = '3d';
+    updateButtonHighlights();
+    console.log('Preset 6 Tracking Mode: 3D');
   });
 
   btnOutline.addEventListener('click', () => {
@@ -1015,7 +1034,7 @@ async function renderLoop(nowMs) {
   }
 
   // ===== PRESET 6: YouTube/Video Corner-pinned Overlay =====
-  if (options.activePreset === 6 && results.leftHandLandmarks && results.rightHandLandmarks) {
+  if (options.activePreset === 6) {
     const lh = results.leftHandLandmarks;
     const rh = results.rightHandLandmarks;
     
@@ -1027,18 +1046,6 @@ async function renderLoop(nowMs) {
     
     const playerEl = document.getElementById('preset6-overlay-video') || document.getElementById('preset6-overlay-image');
     if (playerEl) {
-      const pt1_screen = getScreenCoords(lh[0], rect);
-      const pt2_screen = getScreenCoords(rh[0], rect);
-      
-      let vL, vR;
-      if (pt1_screen.x < pt2_screen.x) {
-        vL = lh;
-        vR = rh;
-      } else {
-        vL = rh;
-        vR = lh;
-      }
-      
       let w_o = 640;
       let h_o = 360;
       if (playerEl.tagName === 'VIDEO') {
@@ -1055,57 +1062,191 @@ async function renderLoop(nowMs) {
       playerEl.style.width = w_o + 'px';
       playerEl.style.height = h_o + 'px';
 
-      let pt1, pt2, pt3, pt4;
+      const dt = lastFrameTime ? (nowMs - lastFrameTime) / 1000 : 0.04;
+      lastFrameTime = nowMs;
 
-      if (preset6TrackingMode === 'hand') {
-        // Find lowest points (maximum y) for left and right hands dynamically
-        let lowestL = vL[0];
-        let lowestR = vR[0];
-        for (let i = 1; i < 21; i++) {
-          if (vL[i].y > lowestL.y) lowestL = vL[i];
-          if (vR[i].y > lowestR.y) lowestR = vR[i];
-        }
-        pt1 = getScreenCoords(lowestL, rect);  // Left Hand lowest point
-        pt2 = getScreenCoords(vL[12], rect);   // Left Middle Finger Tip
-        pt3 = getScreenCoords(vR[12], rect);   // Right Middle Finger Tip
-        pt4 = getScreenCoords(lowestR, rect);  // Right Hand lowest point
-      } else if (preset6TrackingMode === 'fingers') {
-        pt1 = getScreenCoords(vL[4], rect);    // Left Thumb Tip
-        pt2 = getScreenCoords(vL[8], rect);    // Left Index Tip
-        pt3 = getScreenCoords(vR[8], rect);    // Right Index Tip
-        pt4 = getScreenCoords(vR[4], rect);    // Right Thumb Tip
-      } else { // 'pinch'
-        const ptL = getScreenCoords({ x: (vL[8].x + vL[4].x)/2, y: (vL[8].y + vL[4].y)/2 }, rect);
-        const ptR = getScreenCoords({ x: (vR[8].x + vR[4].x)/2, y: (vR[8].y + vR[4].y)/2 }, rect);
-        const dx = ptR.x - ptL.x;
-        const dy = ptR.y - ptL.y;
-        const D = Math.sqrt(dx*dx + dy*dy) || 1;
-        const ux = dx / D;
-        const uy = dy / D;
-        const vx = -uy;
-        const vy = ux;
-        const H = D / (w_o / h_o);
-
-        pt2 = { x: ptL.x - (H/2) * vx, y: ptL.y - (H/2) * vy };
-        pt3 = { x: ptR.x - (H/2) * vx, y: ptR.y - (H/2) * vy };
-        pt4 = { x: ptR.x + (H/2) * vx, y: ptR.y + (H/2) * vy };
-        pt1 = { x: ptL.x + (H/2) * vx, y: ptL.y + (H/2) * vy };
+      // Extract active hands pinch data
+      const activeHands = [];
+      if (lh) {
+        const p = { x: (lh[8].x + lh[4].x)/2, y: (lh[8].y + lh[4].y)/2 };
+        if (options.flipH) p.x = 1.0 - p.x;
+        if (options.flipV) p.y = 1.0 - p.y;
+        const dx = (lh[8].x - lh[4].x) * rect.width;
+        const dy = (lh[8].y - lh[4].y) * rect.height;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        activeHands.push({ side: 'left', pinch: p, isPinching: dist < 45 });
+      }
+      if (rh) {
+        const p = { x: (rh[8].x + rh[4].x)/2, y: (rh[8].y + rh[4].y)/2 };
+        if (options.flipH) p.x = 1.0 - p.x;
+        if (options.flipV) p.y = 1.0 - p.y;
+        const dx = (rh[8].x - rh[4].x) * rect.width;
+        const dy = (rh[8].y - rh[4].y) * rect.height;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        activeHands.push({ side: 'right', pinch: p, isPinching: dist < 45 });
       }
 
-      const x0 = overlayFlipH ? w_o : 0;
-      const x1 = overlayFlipH ? 0 : w_o;
-      const y0 = overlayFlipV ? h_o : 0;
-      const y1 = overlayFlipV ? 0 : h_o;
-      
-      const src = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-      const dst = [[pt2.x, pt2.y], [pt3.x, pt3.y], [pt4.x, pt4.y], [pt1.x, pt1.y]];
-      
-      if (isConvex(dst)) {
-        try {
-          const matrix = getHomographyMatrix(src, dst);
-          playerEl.style.transform = `matrix3d(${matrix.join(',')})`;
-        } catch (err) {
-          console.error('Error computing homography matrix:', err);
+      let pt1, pt2, pt3, pt4;
+      let hasValidWarpCoords = false;
+
+      if (preset6TrackingMode === '3d') {
+        // Dragging & selector updates
+        if (selectedDotIndex === -1) {
+          for (let i = 0; i < 4; i++) {
+            let closeHand = null;
+            for (const h of activeHands) {
+              const dx = (h.pinch.x - dotCoords[i].x) * rect.width;
+              const dy = (h.pinch.y - dotCoords[i].y) * rect.height;
+              if (Math.sqrt(dx*dx + dy*dy) < 35) {
+                closeHand = h;
+                break;
+              }
+            }
+            if (closeHand) {
+              dotLoading[i] = Math.min(1.0, dotLoading[i] + dt / 0.5);
+              if (dotLoading[i] >= 1.0) {
+                selectedDotIndex = i;
+                selectedHand = closeHand.side;
+                dotLoading[i] = 0;
+              }
+            } else {
+              dotLoading[i] = Math.max(0, dotLoading[i] - dt / 0.5);
+            }
+          }
+        } else {
+          // Drag selected dot
+          const h = activeHands.find(hand => hand.side === selectedHand);
+          if (h && h.isPinching) {
+            dotCoords[selectedDotIndex] = { x: h.pinch.x, y: h.pinch.y };
+          } else {
+            selectedDotIndex = -1;
+            selectedHand = null;
+          }
+          // Clear other loading states
+          for (let i = 0; i < 4; i++) {
+            if (i !== selectedDotIndex) dotLoading[i] = 0;
+          }
+        }
+
+        pt2 = { x: dotCoords[0].x * rect.width, y: dotCoords[0].y * rect.height }; // TL
+        pt3 = { x: dotCoords[1].x * rect.width, y: dotCoords[1].y * rect.height }; // TR
+        pt4 = { x: dotCoords[2].x * rect.width, y: dotCoords[2].y * rect.height }; // BR
+        pt1 = { x: dotCoords[3].x * rect.width, y: dotCoords[3].y * rect.height }; // BL
+        hasValidWarpCoords = true;
+      } else if (lh && rh) {
+        const pt1_screen = getScreenCoords(lh[0], rect);
+        const pt2_screen = getScreenCoords(rh[0], rect);
+        
+        let vL, vR;
+        if (pt1_screen.x < pt2_screen.x) {
+          vL = lh;
+          vR = rh;
+        } else {
+          vL = rh;
+          vR = lh;
+        }
+
+        if (preset6TrackingMode === 'hand') {
+          let lowestL = vL[0];
+          let lowestR = vR[0];
+          for (let i = 1; i < 21; i++) {
+            if (vL[i].y > lowestL.y) lowestL = vL[i];
+            if (vR[i].y > lowestR.y) lowestR = vR[i];
+          }
+          pt1 = getScreenCoords(lowestL, rect);
+          pt2 = getScreenCoords(vL[12], rect);
+          pt3 = getScreenCoords(vR[12], rect);
+          pt4 = getScreenCoords(lowestR, rect);
+          hasValidWarpCoords = true;
+        } else if (preset6TrackingMode === 'fingers') {
+          pt1 = getScreenCoords(vL[4], rect);
+          pt2 = getScreenCoords(vL[8], rect);
+          pt3 = getScreenCoords(vR[8], rect);
+          pt4 = getScreenCoords(vR[4], rect);
+          hasValidWarpCoords = true;
+        } else { // 'pinch'
+          const ptL = getScreenCoords({ x: (vL[8].x + vL[4].x)/2, y: (vL[8].y + vL[4].y)/2 }, rect);
+          const ptR = getScreenCoords({ x: (vR[8].x + vR[4].x)/2, y: (vR[8].y + vR[4].y)/2 }, rect);
+          const dx = ptR.x - ptL.x;
+          const dy = ptR.y - ptL.y;
+          const D = Math.sqrt(dx*dx + dy*dy) || 1;
+          const ux = dx / D;
+          const uy = dy / D;
+          const vx = -uy;
+          const vy = ux;
+          const H = D / (w_o / h_o);
+
+          pt2 = { x: ptL.x - (H/2) * vx, y: ptL.y - (H/2) * vy };
+          pt3 = { x: ptR.x - (H/2) * vx, y: ptR.y - (H/2) * vy };
+          pt4 = { x: ptR.x + (H/2) * vx, y: ptR.y + (H/2) * vy };
+          pt1 = { x: ptL.x + (H/2) * vx, y: ptL.y + (H/2) * vy };
+          hasValidWarpCoords = true;
+        }
+      }
+
+      if (hasValidWarpCoords) {
+        const x0 = overlayFlipH ? w_o : 0;
+        const x1 = overlayFlipH ? 0 : w_o;
+        const y0 = overlayFlipV ? h_o : 0;
+        const y1 = overlayFlipV ? 0 : h_o;
+        
+        const src = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+        const dst = [[pt2.x, pt2.y], [pt3.x, pt3.y], [pt4.x, pt4.y], [pt1.x, pt1.y]];
+        
+        if (isConvex(dst)) {
+          try {
+            const matrix = getHomographyMatrix(src, dst);
+            playerEl.style.transform = `matrix3d(${matrix.join(',')})`;
+          } catch (err) {
+            console.error('Error computing homography matrix:', err);
+          }
+        }
+      }
+
+      // Render dots and loading indicators on canvas (visible when hand is near)
+      if (preset6TrackingMode === '3d') {
+        for (let i = 0; i < 4; i++) {
+          let isNear = (selectedDotIndex === i);
+          for (const h of activeHands) {
+            const dx = (h.pinch.x - dotCoords[i].x) * rect.width;
+            const dy = (h.pinch.y - dotCoords[i].y) * rect.height;
+            if (Math.sqrt(dx*dx + dy*dy) < 100) {
+              isNear = true;
+              break;
+            }
+          }
+          if (isNear) {
+            const cx = dotCoords[i].x * canvasElement.width;
+            const cy = dotCoords[i].y * canvasElement.height;
+            const r = (selectedDotIndex === i) ? 12 : 6;
+            
+            // Draw outer green glow circle
+            canvasCtx.fillStyle = 'rgba(0, 230, 118, 0.3)';
+            canvasCtx.beginPath();
+            canvasCtx.arc(cx, cy, r + 4, 0, 2 * Math.PI);
+            canvasCtx.fill();
+            
+            // Draw solid inner dot
+            canvasCtx.fillStyle = (selectedDotIndex === i) ? '#00e676' : '#ffffff';
+            canvasCtx.beginPath();
+            canvasCtx.arc(cx, cy, r, 0, 2 * Math.PI);
+            canvasCtx.fill();
+            
+            // Draw circular loading indicator
+            if (dotLoading[i] > 0) {
+              canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+              canvasCtx.lineWidth = 3;
+              canvasCtx.beginPath();
+              canvasCtx.arc(cx, cy, r + 8, 0, 2 * Math.PI);
+              canvasCtx.stroke();
+              
+              canvasCtx.strokeStyle = '#00e676';
+              canvasCtx.lineWidth = 3;
+              canvasCtx.beginPath();
+              canvasCtx.arc(cx, cy, r + 8, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * dotLoading[i]);
+              canvasCtx.stroke();
+            }
+          }
         }
       }
     }

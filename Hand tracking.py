@@ -124,6 +124,15 @@ overlay_paused = False
 last_frame_o = None
 unlimited_fps = False
 tracking_mode = 'hand'
+dot_coords = [
+    {'x': 0.25, 'y': 0.25}, # TL
+    {'x': 0.75, 'y': 0.25}, # TR
+    {'x': 0.75, 'y': 0.75}, # BR
+    {'x': 0.25, 'y': 0.75}  # BL
+]
+dot_loading = [0.0, 0.0, 0.0, 0.0]
+selected_dot_index = -1
+selected_hand = None
 
 # -------------------------
 # Main Loop
@@ -140,9 +149,10 @@ with mp_holistic.Holistic(
 
         success, frame = cap.read()
         
-        # Calculate FPS
+        # Calculate FPS and dt
         current_time = time.time()
-        fps = int(1 / (current_time - prev_time)) if prev_time > 0 else 0
+        dt = current_time - prev_time if prev_time > 0 else 0.04
+        fps = int(1 / dt) if dt > 0 else 0
         prev_time = current_time
 
         if not success:
@@ -435,7 +445,7 @@ with mp_holistic.Holistic(
         # -------------------------
         # Preset 6: Video/Image Corner-pinned Overlay
         # -------------------------
-        if active_preset == 6 and results.left_hand_landmarks and results.right_hand_landmarks:
+        if active_preset == 6:
             frame_o = None
             if overlay_img is not None:
                 frame_o = overlay_img.copy()
@@ -461,84 +471,165 @@ with mp_holistic.Holistic(
 
                 h_o, w_o, _ = frame_o.shape
                 
-                # Compare horizontal position of index landmark (0) to identify visual left and right hands
-                lh_lms = results.left_hand_landmarks.landmark
-                rh_lms = results.right_hand_landmarks.landmark
-                
-                if lh_lms[0].x < rh_lms[0].x:
-                    vL = lh_lms
-                    vR = rh_lms
-                else:
-                    vL = rh_lms
-                    vR = lh_lms
+                # Extract active hands pinch info
+                active_hands = []
+                if results.left_hand_landmarks:
+                    lh = results.left_hand_landmarks.landmark
+                    px = (lh[8].x + lh[4].x) / 2 * w
+                    py = (lh[8].y + lh[4].y) / 2 * h
+                    dx = (lh[8].x - lh[4].x) * w
+                    dy = (lh[8].y - lh[4].y) * h
+                    dist = math.sqrt(dx*dx + dy*dy)
+                    active_hands.append({'side': 'left', 'pinch': (px, py), 'is_pinching': dist < 45})
+                if results.right_hand_landmarks:
+                    rh = results.right_hand_landmarks.landmark
+                    px = (rh[8].x + rh[4].x) / 2 * w
+                    py = (rh[8].y + rh[4].y) / 2 * h
+                    dx = (rh[8].x - rh[4].x) * w
+                    dy = (rh[8].y - rh[4].y) * h
+                    dist = math.sqrt(dx*dx + dy*dy)
+                    active_hands.append({'side': 'right', 'pinch': (px, py), 'is_pinching': dist < 45})
 
-                if tracking_mode == 'hand':
-                    # Target corners between Left & Right Hand's middle finger tips and lowest points:
-                    # Find lowest points (maximum y) for left and right hands dynamically
-                    lowest_lh = max(vL, key=lambda lm: lm.y)
-                    lowest_rh = max(vR, key=lambda lm: lm.y)
-                    pt1 = (int(lowest_lh.x * w), int(lowest_lh.y * h))
-                    pt2 = (int(vL[12].x * w), int(vL[12].y * h))
-                    pt3 = (int(vR[12].x * w), int(vR[12].y * h))
-                    pt4 = (int(lowest_rh.x * w), int(lowest_rh.y * h))
-                elif tracking_mode == 'fingers':
-                    # Target corners between Left & Right Hand's index and thumb tips:
-                    pt1 = (int(vL[4].x * w), int(vL[4].y * h))
-                    pt2 = (int(vL[8].x * w), int(vL[8].y * h))
-                    pt3 = (int(vR[8].x * w), int(vR[8].y * h))
-                    pt4 = (int(vR[4].x * w), int(vR[4].y * h))
-                else: # 'pinch'
-                    # Average of index and thumb tips
-                    ptL_x = (vL[8].x + vL[4].x) / 2 * w
-                    ptL_y = (vL[8].y + vL[4].y) / 2 * h
-                    ptR_x = (vR[8].x + vR[4].x) / 2 * w
-                    ptR_y = (vR[8].y + vR[4].y) / 2 * h
-                    dx = ptR_x - ptL_x
-                    dy = ptR_y - ptL_y
-                    D = math.sqrt(dx*dx + dy*dy)
-                    if D == 0: D = 1
-                    ux = dx / D
-                    uy = dy / D
-                    vx = -uy
-                    vy = ux
-                    H = D / (w_o / h_o)
+                pt1, pt2, pt3, pt4 = None, None, None, None
+                has_valid_warp_coords = False
+
+                if tracking_mode == '3d':
+                    # Update dragging/selection
+                    if selected_dot_index == -1:
+                        for i in range(4):
+                            close_hand = None
+                            for h_info in active_hands:
+                                hx, hy = h_info['pinch']
+                                dx = hx - dot_coords[i]['x'] * w
+                                dy = hy - dot_coords[i]['y'] * h
+                                if math.sqrt(dx*dx + dy*dy) < 35:
+                                    close_hand = h_info
+                                    break
+                            if close_hand is not None:
+                                dot_loading[i] = min(1.0, dot_loading[i] + dt / 0.5)
+                                if dot_loading[i] >= 1.0:
+                                    selected_dot_index = i
+                                    selected_hand = close_hand['side']
+                                    dot_loading[i] = 0.0
+                            else:
+                                dot_loading[i] = max(0.0, dot_loading[i] - dt / 0.5)
+                    else:
+                        # Find matching hand
+                        h_info = next((hand for hand in active_hands if hand['side'] == selected_hand), None)
+                        if h_info is not None and h_info['is_pinching']:
+                            dot_coords[selected_dot_index]['x'] = h_info['pinch'][0] / w
+                            dot_coords[selected_dot_index]['y'] = h_info['pinch'][1] / h
+                        else:
+                            selected_dot_index = -1
+                            selected_hand = None
+                        # Clear other loading states
+                        for i in range(4):
+                            if i != selected_dot_index:
+                                dot_loading[i] = 0.0
+
+                    pt2 = (int(dot_coords[0]['x'] * w), int(dot_coords[0]['y'] * h)) # TL
+                    pt3 = (int(dot_coords[1]['x'] * w), int(dot_coords[1]['y'] * h)) # TR
+                    pt4 = (int(dot_coords[2]['x'] * w), int(dot_coords[2]['y'] * h)) # BR
+                    pt1 = (int(dot_coords[3]['x'] * w), int(dot_coords[3]['y'] * h)) # BL
+                    has_valid_warp_coords = True
+
+                elif results.left_hand_landmarks and results.right_hand_landmarks:
+                    lh_lms = results.left_hand_landmarks.landmark
+                    rh_lms = results.right_hand_landmarks.landmark
                     
-                    pt2 = (int(ptL_x - (H/2) * vx), int(ptL_y - (H/2) * vy))
-                    pt3 = (int(ptR_x - (H/2) * vx), int(ptR_y - (H/2) * vy))
-                    pt4 = (int(ptR_x + (H/2) * vx), int(ptR_y + (H/2) * vy))
-                    pt1 = (int(ptL_x + (H/2) * vx), int(ptL_y + (H/2) * vy))
-                
-                # Source corners of the overlay video/image
-                src_pts = np.array([
-                    [0, 0],
-                    [w_o - 1, 0],
-                    [w_o - 1, h_o - 1],
-                    [0, h_o - 1]
-                ], dtype=np.float32)
-                
-                # Destination corners: Top-Left (pt2), Top-Right (pt3), Bottom-Right (pt4), Bottom-Left (pt1)
-                dst_pts = np.array([
-                    pt2,
-                    pt3,
-                    pt4,
-                    pt1
-                ], dtype=np.float32)
-                
-                # Only warp if the destination quad is convex and non-self-intersecting
-                if is_convex(dst_pts):
-                    # Compute perspective warp homography matrix
-                    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+                    if lh_lms[0].x < rh_lms[0].x:
+                        vL = lh_lms
+                        vR = rh_lms
+                    else:
+                        vL = rh_lms
+                        vR = lh_lms
+
+                    if tracking_mode == 'hand':
+                        lowest_lh = max(vL, key=lambda lm: lm.y)
+                        lowest_rh = max(vR, key=lambda lm: lm.y)
+                        pt1 = (int(lowest_lh.x * w), int(lowest_lh.y * h))
+                        pt2 = (int(vL[12].x * w), int(vL[12].y * h))
+                        pt3 = (int(vR[12].x * w), int(vR[12].y * h))
+                        pt4 = (int(lowest_rh.x * w), int(lowest_rh.y * h))
+                        has_valid_warp_coords = True
+                    elif tracking_mode == 'fingers':
+                        pt1 = (int(vL[4].x * w), int(vL[4].y * h))
+                        pt2 = (int(vL[8].x * w), int(vL[8].y * h))
+                        pt3 = (int(vR[8].x * w), int(vR[8].y * h))
+                        pt4 = (int(vR[4].x * w), int(vR[4].y * h))
+                        has_valid_warp_coords = True
+                    else: # 'pinch'
+                        ptL_x = (vL[8].x + vL[4].x) / 2 * w
+                        ptL_y = (vL[8].y + vL[4].y) / 2 * h
+                        ptR_x = (vR[8].x + vR[4].x) / 2 * w
+                        ptR_y = (vR[8].y + vR[4].y) / 2 * h
+                        dx = ptR_x - ptL_x
+                        dy = ptR_y - ptL_y
+                        D = math.sqrt(dx*dx + dy*dy)
+                        if D == 0: D = 1
+                        ux = dx / D
+                        uy = dy / D
+                        vx = -uy
+                        vy = ux
+                        H = D / (w_o / h_o)
+                        
+                        pt2 = (int(ptL_x - (H/2) * vx), int(ptL_y - (H/2) * vy))
+                        pt3 = (int(ptR_x - (H/2) * vx), int(ptR_y - (H/2) * vy))
+                        pt4 = (int(ptR_x + (H/2) * vx), int(ptR_y + (H/2) * vy))
+                        pt1 = (int(ptL_x + (H/2) * vx), int(ptL_y + (H/2) * vy))
+                        has_valid_warp_coords = True
+
+                if has_valid_warp_coords:
+                    # Source corners of the overlay video/image
+                    src_pts = np.array([
+                        [0, 0],
+                        [w_o - 1, 0],
+                        [w_o - 1, h_o - 1],
+                        [0, h_o - 1]
+                    ], dtype=np.float32)
                     
-                    # Warp overlay frame to fit screen dimensions (w, h)
-                    warped_overlay = cv2.warpPerspective(frame_o, M, (w, h))
+                    # Destination corners: Top-Left (pt2), Top-Right (pt3), Bottom-Right (pt4), Bottom-Left (pt1)
+                    dst_pts = np.array([
+                        pt2,
+                        pt3,
+                        pt4,
+                        pt1
+                    ], dtype=np.float32)
                     
-                    # Create binary mask of the destination quad area
-                    mask = np.zeros((h, w), dtype=np.uint8)
-                    cv2.fillConvexPoly(mask, np.array([pt2, pt3, pt4, pt1], dtype=np.int32), 255)
-                    
-                    # Blend the warped media into the main frame
-                    mask_3ch = cv2.merge([mask, mask, mask])
-                    frame = np.where(mask_3ch == 255, warped_overlay, frame)
+                    if is_convex(dst_pts):
+                        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+                        warped_overlay = cv2.warpPerspective(frame_o, M, (w, h))
+                        mask = np.zeros((h, w), dtype=np.uint8)
+                        cv2.fillConvexPoly(mask, np.array([pt2, pt3, pt4, pt1], dtype=np.int32), 255)
+                        mask_3ch = cv2.merge([mask, mask, mask])
+                        frame = np.where(mask_3ch == 255, warped_overlay, frame)
+
+                # Draw corner dots and loading indicators on OpenCV frame (visible when hand is near)
+                if tracking_mode == '3d':
+                    for i in range(4):
+                        cx = int(dot_coords[i]['x'] * w)
+                        cy = int(dot_coords[i]['y'] * h)
+                        
+                        is_near = (selected_dot_index == i)
+                        for h_info in active_hands:
+                            hx, hy = h_info['pinch']
+                            if math.sqrt((hx - cx)**2 + (hy - cy)**2) < 100:
+                                is_near = True
+                                break
+                        
+                        if is_near:
+                            r = 12 if selected_dot_index == i else 6
+                            # Draw outer glow circle
+                            cv2.circle(frame, (cx, cy), r + 4, (100, 100, 100), -1)
+                            # Draw solid inner dot (#00e676 -> BGR: (118, 230, 0))
+                            dot_color = (118, 230, 0) if selected_dot_index == i else (255, 255, 255)
+                            cv2.circle(frame, (cx, cy), r, dot_color, -1)
+                            
+                            # Draw loading ring indicator
+                            if dot_loading[i] > 0:
+                                cv2.circle(frame, (cx, cy), r + 8, (100, 100, 100), 2)
+                                angle = int(dot_loading[i] * 360)
+                                cv2.ellipse(frame, (cx, cy), (r + 8, r + 8), -90, 0, angle, (118, 230, 0), 2)
 
         # -------------------------
         # Status Text
@@ -626,6 +717,8 @@ with mp_holistic.Holistic(
                 tracking_mode = 'fingers'
             elif tracking_mode == 'fingers':
                 tracking_mode = 'pinch'
+            elif tracking_mode == 'pinch':
+                tracking_mode = '3d'
             else:
                 tracking_mode = 'hand'
             print(f"Preset 6 Tracking Mode: {tracking_mode.upper()}")
