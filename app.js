@@ -279,10 +279,19 @@ function loadPreset6Media(source, isFile = false) {
     const overlayVideo = document.getElementById('preset6-overlay-video');
 
     if (previewVideo && overlayVideo) {
-      previewVideo.src = mediaUrl;
-      overlayVideo.src = mediaUrl;
-      previewVideo.load();
-      overlayVideo.load();
+      if (source === 'camera') {
+        previewVideo.srcObject = activeStream;
+        overlayVideo.srcObject = activeStream;
+        previewVideo.removeAttribute('controls');
+        previewVideo.muted = true;
+        previewVideo.play().catch(e => console.error("Error playing previewVideo:", e));
+        overlayVideo.play().catch(e => console.error("Error playing overlayVideo:", e));
+      } else {
+        previewVideo.src = mediaUrl;
+        overlayVideo.src = mediaUrl;
+        previewVideo.load();
+        overlayVideo.load();
+      }
 
       previewVideo.addEventListener('play', () => overlayVideo.play());
       previewVideo.addEventListener('pause', () => overlayVideo.pause());
@@ -363,7 +372,7 @@ function updatePresetHighlights() {
     preset6OverlayContainer.style.display = 'block';
     
     if (!document.getElementById('preset6-preview-video') && !document.getElementById('preset6-preview-image')) {
-      loadPreset6Media("sample.mp4", false);
+      loadPreset6Media("camera", false);
     }
   } else {
     preset6Panel.style.display = 'none';
@@ -1550,6 +1559,14 @@ function stopTracking() {
   preset6Panel.style.display = 'none';
   preset6OverlayContainer.style.display = 'none';
   pausePlayers();
+  if (preset6PreviewContainer) {
+    preset6PreviewContainer.innerHTML = `
+      <div style="color: #666; font-size: 12px; height: 100%; display: flex; align-items: center; justify-content: center;">No file selected</div>
+    `;
+  }
+  if (preset6OverlayContainer) {
+    preset6OverlayContainer.innerHTML = '';
+  }
   welcomeScreen.style.display = 'block';
 
 
