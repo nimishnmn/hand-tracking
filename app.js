@@ -622,7 +622,7 @@ async function renderLoop(nowMs) {
       handResult = handLandmarker.detectForVideo(videoElement, ts);
     }
     
-    if (options.showPose) {
+    if (options.showPose || options.activePreset === 5) {
       let pts = performance.now();
       if (pts <= lastPoseTimestamp) pts = lastPoseTimestamp + 1;
       lastPoseTimestamp = pts;
@@ -742,8 +742,8 @@ async function renderLoop(nowMs) {
     canvasCtx.fillRect(0, 0, w, h);
   }
 
-  // Draw Pose Skeleton if enabled
-  if (options.showPose && results.poseLandmarks) {
+  // Draw Pose Skeleton if enabled (except in Preset 5 which has custom neon styling)
+  if (options.showPose && results.poseLandmarks && options.activePreset !== 5) {
     drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {
       color: '#00e676',
       lineWidth: 2
@@ -999,6 +999,42 @@ async function renderLoop(nowMs) {
     const pulseRadius = 4 + 3 * Math.sin(elapsed * 4);
     canvasCtx.save();
     canvasCtx.globalCompositeOperation = 'lighter';
+
+    // Draw custom Neon-Green Pose Skeleton if pose landmarks are detected
+    if (results.poseLandmarks) {
+      const pl = results.poseLandmarks;
+      // Outer glow (neon green)
+      canvasCtx.strokeStyle = 'rgba(57, 255, 20, 0.25)'; canvasCtx.lineWidth = 8;
+      for (const [a, b] of POSE_CONNECTIONS) {
+        if (!pl[a] || !pl[b]) continue;
+        if (pl[a].visibility !== undefined && pl[a].visibility < 0.5) continue;
+        if (pl[b].visibility !== undefined && pl[b].visibility < 0.5) continue;
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(pl[a].x * w, pl[a].y * h);
+        canvasCtx.lineTo(pl[b].x * w, pl[b].y * h);
+        canvasCtx.stroke();
+      }
+      // Inner line (neon green)
+      canvasCtx.strokeStyle = 'rgba(57, 255, 20, 0.9)'; canvasCtx.lineWidth = 3;
+      for (const [a, b] of POSE_CONNECTIONS) {
+        if (!pl[a] || !pl[b]) continue;
+        if (pl[a].visibility !== undefined && pl[a].visibility < 0.5) continue;
+        if (pl[b].visibility !== undefined && pl[b].visibility < 0.5) continue;
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(pl[a].x * w, pl[a].y * h);
+        canvasCtx.lineTo(pl[b].x * w, pl[b].y * h);
+        canvasCtx.stroke();
+      }
+      // Joints (pulsing key points, smaller normal points)
+      const poseJoints = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+      for (let i = 0; i < pl.length; i++) {
+        if (!pl[i] || (pl[i].visibility !== undefined && pl[i].visibility < 0.5)) continue;
+        const r = poseJoints.includes(i) ? pulseRadius : 3;
+        const alpha = poseJoints.includes(i) ? 1.0 : 0.7;
+        canvasCtx.fillStyle = `rgba(57, 255, 20, ${alpha})`;
+        canvasCtx.beginPath(); canvasCtx.arc(pl[i].x * w, pl[i].y * h, r, 0, Math.PI * 2); canvasCtx.fill();
+      }
+    }
 
     const handConns = [
       [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
