@@ -120,7 +120,6 @@ let dotCoords = [
 let dotLoading = [0, 0, 0, 0];
 let selectedDotIndex = -1;
 let selectedHand = null;
-let lastFrameTime = 0; // to compute dt in renderLoop
 
 // Offscreen canvas for pixel manipulation (Preset 3)
 let offscreenCanvas;
@@ -1352,13 +1351,13 @@ async function startTracking() {
   if (typeof FilesetResolver === 'undefined') {
     console.log('FilesetResolver is undefined, attempting dynamic import...');
     try {
-      const module = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js");
+      const module = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs");
       FilesetResolver = module.FilesetResolver;
       HandLandmarker = module.HandLandmarker;
       PoseLandmarker = module.PoseLandmarker;
       console.log('Successfully loaded FilesetResolver dynamically.');
     } catch (e) {
-      console.error('MediaPipe tasks-vision bundle did not load. Check the script tag URL and order in index.html.', e);
+      console.error('MediaPipe tasks-vision bundle did not load.', e);
       return;
     }
   }
