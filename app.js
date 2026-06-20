@@ -31,12 +31,13 @@ function drawLandmarks(ctx, landmarks, style) {
   const radius = style?.radius || 4;
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
+  const checkVisibility = style?.checkVisibility ?? false;
   
   ctx.save();
   ctx.fillStyle = color;
   for (let i = 0; i < landmarks.length; i++) {
     const lm = landmarks[i];
-    if (!lm || (lm.visibility !== undefined && lm.visibility < 0.5)) continue;
+    if (!lm || (checkVisibility && lm.visibility !== undefined && lm.visibility < 0.5)) continue;
     ctx.beginPath();
     ctx.arc(lm.x * w, lm.y * h, radius, 0, 2 * Math.PI);
     ctx.fill();
@@ -50,6 +51,7 @@ function drawConnectors(ctx, landmarks, connections, style) {
   const lineWidth = style?.lineWidth || 1;
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
+  const checkVisibility = style?.checkVisibility ?? false;
 
   ctx.save();
   ctx.strokeStyle = color;
@@ -59,8 +61,8 @@ function drawConnectors(ctx, landmarks, connections, style) {
     const [startIdx, endIdx] = connections[i];
     const startLm = landmarks[startIdx];
     const endLm = landmarks[endIdx];
-    if (!startLm || (startLm.visibility !== undefined && startLm.visibility < 0.5)) continue;
-    if (!endLm || (endLm.visibility !== undefined && endLm.visibility < 0.5)) continue;
+    if (!startLm || (checkVisibility && startLm.visibility !== undefined && startLm.visibility < 0.5)) continue;
+    if (!endLm || (checkVisibility && endLm.visibility !== undefined && endLm.visibility < 0.5)) continue;
     ctx.moveTo(startLm.x * w, startLm.y * h);
     ctx.lineTo(endLm.x * w, endLm.y * h);
   }
@@ -755,12 +757,14 @@ async function renderLoop(nowMs) {
   if (options.showPose && results.poseLandmarks && options.activePreset !== 5) {
     drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {
       color: '#00e676',
-      lineWidth: 2
+      lineWidth: 2,
+      checkVisibility: true
     });
     drawLandmarks(canvasCtx, results.poseLandmarks, {
       color: '#ff3d00',
       lineWidth: 1,
-      radius: 3
+      radius: 3,
+      checkVisibility: true
     });
   }
 
