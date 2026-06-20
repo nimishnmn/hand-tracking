@@ -321,21 +321,6 @@ canvas {
   z-index: 10;
 }
 
-#bg-pattern-layer {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background-image: var(--bg-pattern);
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  opacity: 0.08; /* default home page exposure */
-  z-index: 1; /* behind everything else */
-  pointer-events: none;
-  transition: opacity 0.4s ease;
-}
 
 #welcome-credit {
   position: absolute;

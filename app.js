@@ -74,7 +74,7 @@ let canvasElement;
 let canvasCtx;
 let startCameraBtn;
 let welcomeScreen;
-let bgPatternLayer;
+
 let loadingContainer;
 let loadingText;
 let progressBarFill;
@@ -380,10 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
   canvasCtx = canvasElement.getContext('2d');
   startCameraBtn = document.getElementById('start-camera-btn');
   welcomeScreen = document.getElementById('welcome-screen');
-  bgPatternLayer = document.getElementById('bg-pattern-layer');
-  if (bgPatternLayer) {
-    document.documentElement.style.setProperty('--bg-pattern', `url(${generatePattern()})`);
-  }
+
   loadingContainer = document.getElementById('loading-container');
   loadingText = document.getElementById('loading-text');
   progressBarFill = document.getElementById('progress-bar-fill');
@@ -1393,7 +1390,7 @@ async function startTracking() {
 
   try {
     welcomeScreen.style.display = 'none';
-    if (bgPatternLayer) bgPatternLayer.style.opacity = '0.02';
+
     loadingContainer.style.display = 'block';
     loadingText.textContent = 'Loading model...';
     loadingAnimation = progressBarFill.animate(
@@ -1469,7 +1466,7 @@ async function startTracking() {
 
     lastHandTimestamp = -1;
     lastPoseTimestamp = -1;
-    if (bgPatternLayer) bgPatternLayer.style.display = 'none';
+
     reqFrameId = requestAnimationFrame(renderLoop);
     console.log('10. Loop started');
 
@@ -1480,10 +1477,7 @@ async function startTracking() {
     }
     loadingContainer.style.display = 'none';
     welcomeScreen.style.display = 'block';
-    if (bgPatternLayer) {
-      bgPatternLayer.style.display = 'block';
-      bgPatternLayer.style.opacity = '0.08';
-    }
+
     alert(`Failed to start tracking: ${error.message}`);
   }
 }
@@ -1521,10 +1515,7 @@ function stopTracking() {
   preset6OverlayContainer.style.display = 'none';
   pausePlayers();
   welcomeScreen.style.display = 'block';
-  if (bgPatternLayer) {
-    bgPatternLayer.style.display = 'block';
-    bgPatternLayer.style.opacity = '0.08';
-  }
+
 
   if (handLandmarker) {
     handLandmarker.close();
@@ -1539,42 +1530,4 @@ function stopTracking() {
   fps = 0;
 }
 
-function generatePattern() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1000;
-  canvas.height = 1500;
-  const ctx = canvas.getContext('2d');
-  
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
-  const w = canvas.width;
-  const h = canvas.height;
-  
-  const rh = 40;     // height of segment in y-direction
-  const gap = 15;    // vertical gap between segments
-  const spacing = 75; // horizontal spacing between diagonal lines
-  const step = rh + gap;
-  
-  ctx.lineCap = 'butt';
-  ctx.strokeStyle = '#ffffff'; // white segments (opacity in CSS makes it faint gray)
-  
-  for (let y = -rh * 2; y < h + rh * 2; y += step) {
-    for (let x_base = -h; x_base < w + h; x_base += spacing) {
-      const x = x_base - y;
-      
-      // Normalized position from bottom-left to top-right
-      const t = (x / w + (h - y) / h) / 2;
-      const t_clamped = Math.max(0, Math.min(1, t));
-      
-      // Thickness: thicker at bottom-left (15px), thinner at top-right (1.5px)
-      ctx.lineWidth = 1.5 + 13.5 * (1.0 - t_clamped);
-      
-      ctx.beginPath();
-      ctx.moveTo(x, y + rh);
-      ctx.lineTo(x + rh, y);
-      ctx.stroke();
-    }
-  }
-  
-  return canvas.toDataURL();
-}
+
