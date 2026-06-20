@@ -73,6 +73,7 @@ let videoElement;
 let canvasElement;
 let canvasCtx;
 let startCameraBtn;
+let welcomeScreen;
 let loadingContainer;
 let loadingText;
 let progressBarFill;
@@ -377,6 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
   canvasElement = document.getElementById('output-canvas');
   canvasCtx = canvasElement.getContext('2d');
   startCameraBtn = document.getElementById('start-camera-btn');
+  welcomeScreen = document.getElementById('welcome-screen');
   loadingContainer = document.getElementById('loading-container');
   loadingText = document.getElementById('loading-text');
   progressBarFill = document.getElementById('progress-bar-fill');
@@ -1385,7 +1387,7 @@ async function startTracking() {
   }
 
   try {
-    startCameraBtn.style.display = 'none';
+    welcomeScreen.style.display = 'none';
     loadingContainer.style.display = 'block';
     loadingText.textContent = 'Loading model...';
     loadingAnimation = progressBarFill.animate(
@@ -1470,7 +1472,7 @@ async function startTracking() {
       loadingAnimation.cancel();
     }
     loadingContainer.style.display = 'none';
-    startCameraBtn.style.display = 'block';
+    welcomeScreen.style.display = 'block';
     alert(`Failed to start tracking: ${error.message}`);
   }
 }
@@ -1507,7 +1509,7 @@ function stopTracking() {
   preset6Panel.style.display = 'none';
   preset6OverlayContainer.style.display = 'none';
   pausePlayers();
-  startCameraBtn.style.display = 'block';
+  welcomeScreen.style.display = 'block';
 
   if (handLandmarker) {
     handLandmarker.close();
