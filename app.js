@@ -995,15 +995,40 @@ async function renderLoop(nowMs) {
         vR = lh;
       }
       
-      const pt1 = getScreenCoords(vL[4], rect); // Left Thumb
-      const pt2 = getScreenCoords(vL[8], rect); // Left Index
-      const pt3 = getScreenCoords(vR[8], rect); // Right Index
-      const pt4 = getScreenCoords(vR[4], rect); // Right Thumb
+      // Find lowest points (maximum y) for left and right hands dynamically
+      let lowestL = vL[0];
+      let lowestR = vR[0];
+      for (let i = 1; i < 21; i++) {
+        if (vL[i].y > lowestL.y) lowestL = vL[i];
+        if (vR[i].y > lowestR.y) lowestR = vR[i];
+      }
+
+      // Middle finger tip is index 12
+      const pt1 = getScreenCoords(lowestL, rect);  // Left Hand lowest point
+      const pt2 = getScreenCoords(vL[12], rect);   // Left Middle Finger Tip
+      const pt3 = getScreenCoords(vR[12], rect);   // Right Middle Finger Tip
+      const pt4 = getScreenCoords(lowestR, rect);  // Right Hand lowest point
       
-      const x0 = overlayFlipH ? 640 : 0;
-      const x1 = overlayFlipH ? 0 : 640;
-      const y0 = overlayFlipV ? 360 : 0;
-      const y1 = overlayFlipV ? 0 : 360;
+      let w_o = 640;
+      let h_o = 360;
+      if (playerEl.tagName === 'VIDEO') {
+        if (playerEl.videoWidth) {
+          w_o = playerEl.videoWidth;
+          h_o = playerEl.videoHeight;
+        }
+      } else if (playerEl.tagName === 'IMG') {
+        if (playerEl.naturalWidth) {
+          w_o = playerEl.naturalWidth;
+          h_o = playerEl.naturalHeight;
+        }
+      }
+      playerEl.style.width = w_o + 'px';
+      playerEl.style.height = h_o + 'px';
+
+      const x0 = overlayFlipH ? w_o : 0;
+      const x1 = overlayFlipH ? 0 : w_o;
+      const y0 = overlayFlipV ? h_o : 0;
+      const y1 = overlayFlipV ? 0 : h_o;
       
       const src = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
       const dst = [[pt2.x, pt2.y], [pt3.x, pt3.y], [pt4.x, pt4.y], [pt1.x, pt1.y]];
@@ -1084,6 +1109,31 @@ document.addEventListener('keydown', (event) => {
     options.showOutline = !options.showOutline;
     updatePresetHighlights();
     console.log(`Outline: ${options.showOutline ? 'ON' : 'OFF'}`);
+  } else if (options.activePreset === 6 && (event.key === ' ' || event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+    event.preventDefault(); // Prevent page scrolling
+    const previewVideo = document.getElementById('preset6-preview-video');
+    const overlayVideo = document.getElementById('preset6-overlay-video');
+    if (previewVideo && overlayVideo) {
+      if (event.key === ' ') {
+        if (previewVideo.paused) {
+          previewVideo.play();
+          overlayVideo.play();
+          console.log('Video play');
+        } else {
+          previewVideo.pause();
+          overlayVideo.pause();
+          console.log('Video pause');
+        }
+      } else if (event.key === 'ArrowRight') {
+        previewVideo.currentTime = Math.min(previewVideo.duration || 0, previewVideo.currentTime + 5);
+        overlayVideo.currentTime = previewVideo.currentTime;
+        console.log('Video skip forward 5s');
+      } else if (event.key === 'ArrowLeft') {
+        previewVideo.currentTime = Math.max(0, previewVideo.currentTime - 5);
+        overlayVideo.currentTime = previewVideo.currentTime;
+        console.log('Video skip backward 5s');
+      }
+    }
   }
 });
 

@@ -120,6 +120,8 @@ overlay_cap = None
 overlay_img = None
 overlay_flip_h = False
 overlay_flip_v = False
+overlay_paused = False
+last_frame_o = None
 
 # -------------------------
 # Main Loop
@@ -436,10 +438,15 @@ with mp_holistic.Holistic(
             if overlay_img is not None:
                 frame_o = overlay_img.copy()
             elif overlay_cap is not None and overlay_cap.isOpened():
-                ret_o, frame_o = overlay_cap.read()
-                if not ret_o:
-                    overlay_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                if not overlay_paused or last_frame_o is None:
                     ret_o, frame_o = overlay_cap.read()
+                    if not ret_o:
+                        overlay_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        ret_o, frame_o = overlay_cap.read()
+                    if ret_o:
+                        last_frame_o = frame_o.copy()
+                else:
+                    frame_o = last_frame_o.copy() if last_frame_o is not None else None
                 
             if frame_o is not None:
                 # Apply flips
@@ -463,15 +470,19 @@ with mp_holistic.Holistic(
                     vL = rh_lms
                     vR = lh_lms
 
-                # Target corners between Left & Right Hand's index and thumb tips:
-                # pt1 (Left Hand thumb tip)
-                # pt2 (Left Hand index tip)
-                # pt3 (Right Hand index tip)
-                # pt4 (Right Hand thumb tip)
-                pt1 = (int(vL[4].x * w), int(vL[4].y * h))
-                pt2 = (int(vL[8].x * w), int(vL[8].y * h))
-                pt3 = (int(vR[8].x * w), int(vR[8].y * h))
-                pt4 = (int(vR[4].x * w), int(vR[4].y * h))
+                # Target corners between Left & Right Hand's middle finger tips and lowest points:
+                # Find lowest points (maximum y) for left and right hands dynamically
+                lowest_lh = max(vL, key=lambda lm: lm.y)
+                lowest_rh = max(vR, key=lambda lm: lm.y)
+
+                # pt1: Left Hand lowest point
+                # pt2: Left Hand middle finger tip (12)
+                # pt3: Right Hand middle finger tip (12)
+                # pt4: Right Hand lowest point
+                pt1 = (int(lowest_lh.x * w), int(lowest_lh.y * h))
+                pt2 = (int(vL[12].x * w), int(vL[12].y * h))
+                pt3 = (int(vR[12].x * w), int(vR[12].y * h))
+                pt4 = (int(lowest_rh.x * w), int(lowest_rh.y * h))
                 
                 # Source corners of the overlay video/image
                 src_pts = np.array([
@@ -662,6 +673,31 @@ with mp_holistic.Holistic(
         elif key == ord(']') and active_preset == 6:
             overlay_flip_v = not overlay_flip_v
             print(f"Overlay Flip V: {'ON' if overlay_flip_v else 'OFF'}")
+
+        elif key == 32 and active_preset == 6:  # Space bar
+            overlay_paused = not overlay_paused
+            print(f"Video play/pause toggled: {'PAUSED' if overlay_paused else 'PLAYING'}")
+        
+        elif key in [81, 63234, 2, 2424832] and active_preset == 6:  # Left arrow
+            if overlay_cap is not None and overlay_cap.isOpened():
+                fps_o = overlay_cap.get(cv2.CAP_PROP_FPS) or 25.0
+                curr = overlay_cap.get(cv2.CAP_PROP_POS_FRAMES)
+                overlay_cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, curr - fps_o * 5))
+                ret_o, temp_frame = overlay_cap.read()
+                if ret_o:
+                    last_frame_o = temp_frame.copy()
+                print("Video rewound 5 seconds")
+                
+        elif key in [83, 63235, 3, 2424833] and active_preset == 6:  # Right arrow
+            if overlay_cap is not None and overlay_cap.isOpened():
+                fps_o = overlay_cap.get(cv2.CAP_PROP_FPS) or 25.0
+                curr = overlay_cap.get(cv2.CAP_PROP_POS_FRAMES)
+                total = overlay_cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                overlay_cap.set(cv2.CAP_PROP_POS_FRAMES, min(total - 1, curr + fps_o * 5))
+                ret_o, temp_frame = overlay_cap.read()
+                if ret_o:
+                    last_frame_o = temp_frame.copy()
+                print("Video forwarded 5 seconds")
 
         # Lock to 25 FPS (40ms interval)
         elapsed = time.time() - loop_start
