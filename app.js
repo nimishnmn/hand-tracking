@@ -875,7 +875,7 @@ async function renderLoop(nowMs) {
     // Define finger pairs: [leftIdx1, leftIdx2, rightIdx1, rightIdx2, filterName]
     const fingerPairs = [
       [4, 8, 4, 8, 'invert'],
-      [8, 12, 8, 12, 'grayscale'],
+      [8, 12, 8, 12, 'halftone'],
       [12, 16, 12, 16, 'duotone'],
       [16, 20, 16, 20, 'pixelate'],
     ];
@@ -909,10 +909,34 @@ async function renderLoop(nowMs) {
           data[i + 1] = 255 - data[i + 1];
           data[i + 2] = 255 - data[i + 2];
         }
-      } else if (filterName === 'grayscale') {
-        for (let i = 0; i < data.length; i += 4) {
-          const avg = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-          data[i] = data[i + 1] = data[i + 2] = avg;
+      } else if (filterName === 'halftone') {
+        // Fill the bounding box region with solid black
+        offCtx.fillStyle = '#000000';
+        offCtx.fillRect(minX, minY, bw, bh);
+        
+        offCtx.fillStyle = '#ffffff';
+        const grid = 6;
+        const maxRadius = (grid / 2) * 1.2;
+        
+        for (let gy = Math.floor(minY + grid / 2); gy < minY + bh; gy += grid) {
+          for (let gx = Math.floor(minX + grid / 2); gx < minX + bw; gx += grid) {
+            const lx = Math.floor(gx - minX);
+            const ly = Math.floor(gy - minY);
+            if (lx >= 0 && lx < bw && ly >= 0 && ly < bh) {
+              const idx = (ly * bw + lx) * 4;
+              const r = data[idx];
+              const g = data[idx + 1];
+              const b = data[idx + 2];
+              const lum = r * 0.299 + g * 0.587 + b * 0.114;
+              
+              const radius = (lum / 255) * maxRadius;
+              if (radius > 0.5) {
+                offCtx.beginPath();
+                offCtx.arc(gx, gy, radius, 0, Math.PI * 2);
+                offCtx.fill();
+              }
+            }
+          }
         }
       } else if (filterName === 'duotone') {
         for (let i = 0; i < data.length; i += 4) {
@@ -944,7 +968,9 @@ async function renderLoop(nowMs) {
         }
       }
 
-      offCtx.putImageData(imgData, minX, minY);
+      if (filterName !== 'halftone') {
+        offCtx.putImageData(imgData, minX, minY);
+      }
 
       canvasCtx.save();
       canvasCtx.beginPath();
