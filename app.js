@@ -110,6 +110,9 @@ let overlayFlipH = false;
 let overlayFlipV = false;
 let universalPanel;
 let btnUnlimitedFps;
+let btnGlasses;
+const glassesImg = new Image();
+glassesImg.src = 'glasses.png';
 let btnPreset6ModeHand;
 let btnPreset6ModeFingers;
 let btnPreset6ModePinch;
@@ -324,16 +327,17 @@ function pausePlayers() {
   }
 }
 
-// Default toggle states (All OFF by default)
+// Default toggle states (showOutline is ON by default for Preset 3, showGlasses is OFF)
 const options = {
   showPose: false,
   showHands: false,
   showCornerpin: true, // Always active
-  showOutline: false,
+  showOutline: true,
   flipH: false,
   flipV: false,
   activePreset: 1,
-  unlimitedFps: false
+  unlimitedFps: false,
+  showGlasses: false
 };
 
 // Update CSS classes for active buttons
@@ -343,6 +347,7 @@ function updateButtonHighlights() {
   btnFlipH.classList.toggle('active', options.flipH);
   btnFlipV.classList.toggle('active', options.flipV);
   if (btnUnlimitedFps) btnUnlimitedFps.classList.toggle('active', options.unlimitedFps);
+  if (btnGlasses) btnGlasses.classList.toggle('active', options.showGlasses);
   if (btnPreset6ModeHand) btnPreset6ModeHand.classList.toggle('active', preset6TrackingMode === 'hand');
   if (btnPreset6ModeFingers) btnPreset6ModeFingers.classList.toggle('active', preset6TrackingMode === 'fingers');
   if (btnPreset6ModePinch) btnPreset6ModePinch.classList.toggle('active', preset6TrackingMode === 'pinch');
@@ -423,6 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
   preset6OverlayContainer = document.getElementById('preset6-overlay-container');
   universalPanel = document.getElementById('universal-panel');
   btnUnlimitedFps = document.getElementById('btn-unlimited-fps');
+  btnGlasses = document.getElementById('btn-glasses');
   btnPreset6ModeHand = document.getElementById('preset6-mode-hand');
   btnPreset6ModeFingers = document.getElementById('preset6-mode-fingers');
   btnPreset6ModePinch = document.getElementById('preset6-mode-pinch');
@@ -504,6 +510,12 @@ document.addEventListener('DOMContentLoaded', () => {
     options.unlimitedFps = !options.unlimitedFps;
     updateButtonHighlights();
     console.log(`Unlimited FPS: ${options.unlimitedFps ? 'ON' : 'OFF'}`);
+  });
+
+  btnGlasses.addEventListener('click', () => {
+    options.showGlasses = !options.showGlasses;
+    updateButtonHighlights();
+    console.log(`Glasses: ${options.showGlasses ? 'ON' : 'OFF'}`);
   });
 
   btnPreset6ModeHand.addEventListener('click', () => {
@@ -633,7 +645,7 @@ async function renderLoop(nowMs) {
       handResult = handLandmarker.detectForVideo(videoElement, ts);
     }
     
-    if (options.showPose || options.activePreset === 5) {
+    if (options.showPose || options.activePreset === 5 || options.showGlasses) {
       let pts = performance.now();
       if (pts <= lastPoseTimestamp) pts = lastPoseTimestamp + 1;
       lastPoseTimestamp = pts;
@@ -1352,6 +1364,35 @@ async function renderLoop(nowMs) {
     }
   }
 
+  // Draw face-tracked glasses if enabled
+  if (options.showGlasses && results.poseLandmarks) {
+    const pl = results.poseLandmarks;
+    if (pl[2] && pl[5]) {
+      const leX = pl[2].x * w;
+      const leY = pl[2].y * h;
+      const reX = pl[5].x * w;
+      const reY = pl[5].y * h;
+
+      const midX = (leX + reX) / 2;
+      const midY = (leY + reY) / 2;
+
+      const dx = reX - leX;
+      const dy = reY - leY;
+      const eyeDist = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx);
+
+      if (glassesImg.complete && glassesImg.naturalWidth > 0) {
+        canvasCtx.save();
+        canvasCtx.translate(midX, midY);
+        canvasCtx.rotate(angle);
+        const glassesWidth = eyeDist * 2.2;
+        const glassesHeight = glassesWidth * (glassesImg.naturalHeight / glassesImg.naturalWidth);
+        canvasCtx.drawImage(glassesImg, -glassesWidth / 2, -glassesHeight / 2, glassesWidth, glassesHeight);
+        canvasCtx.restore();
+      }
+    }
+  }
+
   canvasCtx.restore(); // Restore flip scale/translate, returning context to clean screen-space
 
   // 3. Draw HUD Skeletons Status (Exactly replicating CV2 putText colors & positions)
@@ -1417,6 +1458,10 @@ document.addEventListener('keydown', (event) => {
     options.showOutline = !options.showOutline;
     updatePresetHighlights();
     console.log(`Outline: ${options.showOutline ? 'ON' : 'OFF'}`);
+  } else if (key === 'g') {
+    options.showGlasses = !options.showGlasses;
+    updateButtonHighlights();
+    console.log(`Glasses: ${options.showGlasses ? 'ON' : 'OFF'}`);
   } else if (options.activePreset === 6 && (event.key === ' ' || event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
     event.preventDefault(); // Prevent page scrolling
     const previewVideo = document.getElementById('preset6-preview-video');
